@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kannaka-quantum"
+version = "0.1.0"
+description = "Real quantum capabilities for Kannaka via qBraid — a CLI bridge for the coding agent and an MCP server for any agent."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["quantum", "qbraid", "kannaka", "mcp", "agent", "qiskit"]
+dependencies = [
+    "qbraid>=0.9",
+    "qiskit>=1.0",
+    "numpy>=1.23",
+    "mcp>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/NickFlach/kannaka-quantum"
+
+[project.scripts]
+kannaka-quantum = "kannaka_quantum.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["kannaka_quantum*"]

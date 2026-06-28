@@ -29,32 +29,53 @@ def _parse_strs(s: Optional[str]) -> Optional[list[str]]:
     return [x.strip() for x in s.split(",") if x.strip()]
 
 
+_DEVICE_HELP = (
+    "device id (default: free qBraid simulator). Use 'openquantum:<backend>' "
+    "(e.g. openquantum:iqm:garnet) for a real QPU — spends Spark credits."
+)
+
+
+def _add_spend_opts(p: argparse.ArgumentParser) -> None:
+    """Provider-routing spend guard shared by run/qrng/recall.
+
+    No-ops on the free qBraid simulator; required to run on OpenQuantum, which
+    has no free tier (1 credit = $2; default ceiling 1 credit).
+    """
+    p.add_argument("--allow-spend", action="store_true", help="permit a credit-spending OpenQuantum run")
+    p.add_argument("--max-credits", type=float, default=None, help="credit ceiling for an OpenQuantum run (default 1.0)")
+    p.add_argument("--subcategory", default=None, help="OpenQuantum job_subcategory_id workload tag")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="kannaka-quantum",
-        description="Kannaka quantum bridge — run circuits, QRNG, and resonance recall on qBraid.",
+        description="Kannaka quantum bridge — circuits, QRNG, and resonance recall on qBraid "
+        "(free simulator) or OpenQuantum (real QPUs, spends Spark credits).",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    d = sub.add_parser("devices", help="list qBraid devices")
+    d = sub.add_parser("devices", help="list quantum devices (qBraid + OpenQuantum)")
     d.add_argument("--online", action="store_true", help="only ONLINE devices")
 
     r = sub.add_parser("run", help="run an OpenQASM 3 circuit")
     r.add_argument("--qasm", help='OpenQASM 3 source ("-" or omit reads stdin)')
     r.add_argument("--qasm-file", help="path to an OpenQASM 3 file")
-    r.add_argument("--device", default=core.DEFAULT_DEVICE)
+    r.add_argument("--device", default=core.DEFAULT_DEVICE, help=_DEVICE_HELP)
     r.add_argument("--shots", type=int, default=100)
+    _add_spend_opts(r)
 
     g = sub.add_parser("qrng", help="quantum random bits")
     g.add_argument("--bits", type=int, default=8)
-    g.add_argument("--device", default=core.DEFAULT_DEVICE)
+    g.add_argument("--device", default=core.DEFAULT_DEVICE, help=_DEVICE_HELP)
+    _add_spend_opts(g)
 
     rc = sub.add_parser("recall", help="resonance recall as amplitude amplification")
     rc.add_argument("--amplitudes", required=True, help="comma-separated or JSON list of resonances")
     rc.add_argument("--labels", help="comma-separated or JSON list of labels")
     rc.add_argument("--shots", type=int, default=1024)
     rc.add_argument("--no-amplify", action="store_true", help="skip amplitude amplification")
-    rc.add_argument("--device", default=core.DEFAULT_DEVICE)
+    rc.add_argument("--device", default=core.DEFAULT_DEVICE, help=_DEVICE_HELP)
+    _add_spend_opts(rc)
 
     sub.add_parser("mcp", help="launch the MCP server (stdio)")
     return p
@@ -76,9 +97,22 @@ def main(argv: Optional[list[str]] = None) -> int:
                 qasm = sys.stdin.buffer.read().decode("utf-8-sig", errors="replace")
             if not qasm.strip():
                 raise ValueError("no OpenQASM 3 provided (use --qasm, --qasm-file, or stdin)")
-            out = core.run_qasm(qasm, device=args.device, shots=args.shots)
+            out = core.run_qasm(
+                qasm,
+                device=args.device,
+                shots=args.shots,
+                allow_spend=args.allow_spend,
+                max_credits=args.max_credits,
+                subcategory=args.subcategory,
+            )
         elif args.cmd == "qrng":
-            out = core.qrng(args.bits, device=args.device)
+            out = core.qrng(
+                args.bits,
+                device=args.device,
+                allow_spend=args.allow_spend,
+                max_credits=args.max_credits,
+                subcategory=args.subcategory,
+            )
         elif args.cmd == "recall":
             out = core.quantum_recall(
                 _parse_floats(args.amplitudes),
@@ -86,6 +120,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                 shots=args.shots,
                 amplify=not args.no_amplify,
                 device=args.device,
+                allow_spend=args.allow_spend,
+                max_credits=args.max_credits,
+                subcategory=args.subcategory,
             )
         elif args.cmd == "mcp":
             from .mcp_server import run_stdio

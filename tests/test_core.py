@@ -56,3 +56,14 @@ def test_counts_parser_handles_shapes():
 
     assert core._counts_from_result(_R()) == {"00": 5, "11": 7}
     assert core._counts_from_result(object()) == {}
+
+
+def test_measured_index_device_aware():
+    # qBraid-native backends report big-endian → reverse to the qiskit index.
+    assert core._measured_index("10", "qbraid:qbraid:sim:qir-sv") == 1
+    assert core._measured_index("01", "qbraid:qbraid:sim:qir-sv") == 2
+    # AWS-routed devices (Rigetti via Braket) report the opposite order — no
+    # reversal. Verified against a live aws:rigetti recall (2026-06-29): raw '01'
+    # was the amplified target 'signal' (index 1), not the bit-reversed index 2.
+    assert core._measured_index("10", "aws:rigetti:qpu:cepheus-1-108q") == 2
+    assert core._measured_index("01", "aws:rigetti:qpu:cepheus-1-108q") == 1

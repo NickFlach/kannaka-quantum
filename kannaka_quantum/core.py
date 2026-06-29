@@ -525,6 +525,22 @@ def _optimal_iterations(target_amplitude: float) -> int:
     return max(0, int(round((np.pi / 2 - theta) / (2 * theta))))
 
 
+def _measured_index(bits: str, device: str) -> int:
+    """Decode a measurement bitstring to a candidate index, accounting for the
+    device's qubit-ordering convention.
+
+    qBraid's own backends report bitstrings big-endian, so we reverse to recover
+    the qiskit little-endian index that ``StatePreparation`` used. AWS-routed
+    devices (``aws:*`` — e.g. Rigetti via Braket) report in the opposite order,
+    so no reversal. Verified on ``qbraid:qbraid:sim:qir-sv`` (reverse) and
+    ``aws:rigetti:qpu:cepheus-1-108q`` (no reverse) — before this fix the latter's
+    amplified peak was mis-labelled to the bit-reversed candidate. Non-qBraid
+    providers (e.g. OpenQuantum) are treated like AWS pending a real recall to
+    confirm their convention.
+    """
+    return int(bits[::-1], 2) if device.startswith("qbraid:") else int(bits, 2)
+
+
 def quantum_recall(
     amplitudes: Sequence[float],
     labels: Optional[Sequence[str]] = None,
@@ -599,9 +615,9 @@ def quantum_recall(
 
     dist: dict[int, int] = {}
     for bits, c in out["counts"].items():
-        # qBraid returns big-endian bitstrings; reverse to qiskit's
-        # little-endian index (StatePreparation / measurement convention).
-        idx = int(bits[::-1], 2)
+        # Bitstring qubit-order is device-dependent (qBraid-native reverses,
+        # AWS-routed does not) — see _measured_index.
+        idx = _measured_index(bits, device)
         if idx < k:
             dist[idx] = dist.get(idx, 0) + int(c)
     quantum_top = max(dist, key=dist.get) if dist else None

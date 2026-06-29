@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "kannaka-quantum": {
+      "command": "python",
+      "args": ["-m", "kannaka_quantum", "mcp"]
+    }
+  }
+}

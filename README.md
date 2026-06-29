@@ -48,18 +48,18 @@ The free qBraid simulator is the **default device everywhere**, so casual and ag
   sched = SchedulerClient(auth=auth, management_client=mgmt)
 
   cfg = JobSubmissionConfig(
-      backend_class_id="iqm:garnet",      # the part after "openquantum:"
+      backend_class_id="iqm:garnet",       # the part after "openquantum:"
       name="kannaka-quantum",
-      job_subcategory_id="phys:oth",       # required workload tag
+      job_subcategory_id="phys:oth",        # required workload tag
       shots=256,
-      organization_id=mgmt.list_user_organizations(limit=1)[...].id,
+      organization_id=org_id,               # auto-discovered (see below)
       auto_approve_quote=True,
   )
   job    = sched.submit_job(cfg, file_content=qasm.encode("utf-8"))
   output = sched.download_job_output(job)
   ```
 
-  Backends are discovered with `mgmt.list_backend_classes(...)`. The bridge wraps all of this — you only ever pass a device string and OpenQASM.
+  The bridge wraps all of this — you only ever pass a device string and OpenQASM. See [OpenQuantum integration internals](#openquantum-integration-internals) for the full authoritative SDK surface (endpoints, auth, config fields, method map).
 
 ---
 
@@ -132,6 +132,68 @@ claude mcp add kannaka-quantum -- python -m kannaka_quantum mcp
 ```
 
 …then any agent can call `quantum_devices`, `run_circuit`, `quantum_random`, and `resonance_recall`. (Shipped as a Claude Code plugin too — see `.claude-plugin/` and `skills/kannaka-quantum/`.)
+
+---
+
+## OpenQuantum integration internals
+
+The authoritative surface, verified against `openquantum-sdk` **0.3.7** (the docs' overview omits most of this). Everything below is wrapped by the bridge; you don't call it directly, but this is what an `openquantum:…` device routes through.
+
+### Services & auth
+
+OpenQuantum is three HTTP services behind a Keycloak identity provider:
+
+| service | default base URL | role |
+|---|---|---|
+| Identity (Keycloak) | `https://id.openquantum.com` (realm `platform`) | OAuth2 client-credentials → bearer token |
+| Management | `https://management.openquantum.com` | backends, organizations, categories |
+| Scheduler | `https://scheduler.openquantum.com` | job submit / status / output |
+
+```python
+ClientCredentialsAuth(
+    creds,                                      # ClientCredentials(client_id, client_secret)
+    keycloak_base="https://id.openquantum.com",
+    realm="platform",
+    scope=None,
+    leeway_seconds=30,                          # token-refresh clock skew
+    session=None,
+)
+```
+
+Auth is **OAuth2 client-credentials with automatic token refresh** — construct it once and the clients reuse/refresh the bearer token. `client_id` is prefixed `s_…`. Both clients accept either an `auth=` object or a raw `token=`:
+
+```python
+SchedulerClient(base_url="https://scheduler.openquantum.com",  token=None, auth=None, management_client=None)
+ManagementClient(base_url="https://management.openquantum.com", token=None, auth=None)
+```
+
+A `SchedulerClient` will lazily build its own `ManagementClient` for organization auto-discovery if you don't pass one. The bridge passes an explicit shared `mgmt` so both clients reuse one token.
+
+### `JobSubmissionConfig` fields
+
+| field | type | the bridge sets |
+|---|---|---|
+| `backend_class_id` | `str` | the part after `openquantum:` (e.g. `iqm:garnet`) |
+| `name` | `str` | `"kannaka-quantum"` |
+| `job_subcategory_id` | `str` | `"phys:oth"` (required workload tag; override via `--subcategory` / `OPENQUANTUM_SUBCATEGORY`) |
+| `shots` | `int` | the requested shot count |
+| `organization_id` | `Optional[str]` | resolved from `mgmt.list_user_organizations(...)` |
+| `auto_approve_quote` | `bool` | `True` — accept the live cost quote (already bounded by the pre-flight credit cap) |
+| `configuration_data` | `Optional[Dict]` | — |
+| `execution_plan` / `queue_priority` | enum / auto | left at the SDK's `AutoChoice` |
+| `job_timeout_seconds`, `verbose` | `int` / `bool` | SDK defaults |
+
+### `SchedulerClient` method map
+
+```python
+job    = sched.submit_job(config, *, file_content=bytes | None, file_path=str | None)  # -> JobRead
+output = sched.download_job_output(job)                                                # -> Any (counts)
+sched.close()
+```
+
+The bridge submits in-memory (`file_content=qasm.encode("utf-8")`) rather than from a file. Other lifecycle methods the SDK exposes (not currently used): `get_job`, `list_jobs`, `cancel_job`, `prepare_job` / `get_preparation_result`, `upload_job_input`, `get_job_categories` / `get_job_subcategories`, `get_backend_class`.
+
+> **Result shape note.** `download_job_output` returns provider-dependent JSON. The bridge's `_oq_counts` tries `counts` / `measurement_counts` / `histogram` / `meas` keys and a few accessor shapes, then falls back to attaching the raw output under `raw_output` so the parser can be tightened once a given backend's exact shape is observed. Backend qubit-ordering for `resonance_recall` is treated as big-endian-no-reverse (like AWS-routed devices) **pending a confirmed real recall** on an OpenQuantum QPU.
 
 ---
 

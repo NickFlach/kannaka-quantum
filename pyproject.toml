@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kannaka-quantum"
-version = "0.2.0"
+version = "0.2.1"
 description = "Real quantum + qBraid Lab infrastructure capabilities for Kannaka via qBraid (free simulator) and OpenQuantum (real QPUs) — a CLI bridge for the coding agent and an MCP server for any agent."
 readme = "README.md"
 license = { text = "MIT" }

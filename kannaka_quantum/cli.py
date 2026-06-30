@@ -168,6 +168,33 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("lab-stop-instance", help="stop (pause) an instance (preserves disk)")
     sp.add_argument("--instance-id", required=True)
 
+    # --- remote agents (run a coding agent on a provisioned instance) -------
+    sc = sub.add_parser("lab-ssh-configure", help="configure SSH to an instance, return its alias")
+    sc.add_argument("--instance-id", required=True)
+
+    al = sub.add_parser("lab-agent-launch", help="launch a coding agent on a remote instance via SSH")
+    al.add_argument("--ssh-alias", required=True)
+    al.add_argument("--tool", default="claude", help="claude | codex | opencode")
+    al.add_argument("--instructions", default=None)
+    al.add_argument("--cwd", default=None)
+    al.add_argument("--name", default=None)
+    al.add_argument("--agent-type", default=None)
+    al.add_argument("--tags", default=None, help="JSON list or CSV")
+
+    aL = sub.add_parser("lab-agent-list", help="list remote agents on an instance")
+    aL.add_argument("--ssh-alias", required=True)
+    aL.add_argument("--include-stopped", action="store_true")
+
+    ar = sub.add_parser("lab-agent-read", help="read a remote agent's terminal output")
+    ar.add_argument("--ssh-alias", required=True)
+    ar.add_argument("--session-id", required=True)
+    ar.add_argument("--lines", type=int, default=50)
+
+    asnd = sub.add_parser("lab-agent-send", help="send text to a remote agent")
+    asnd.add_argument("--ssh-alias", required=True)
+    asnd.add_argument("--session-id", required=True)
+    asnd.add_argument("--text", required=True)
+
     sub.add_parser("mcp", help="launch the MCP server (stdio)")
     return p
 
@@ -233,6 +260,24 @@ def _dispatch_lab(args) -> Optional[dict]:
         return lab.lab_start_instance(args.instance_id, allow_spend=args.allow_spend, max_credits=args.max_credits)
     if cmd == "lab-stop-instance":
         return lab.lab_stop_instance(args.instance_id)
+    if cmd == "lab-ssh-configure":
+        return lab.lab_ssh_configure(args.instance_id)
+    if cmd == "lab-agent-launch":
+        return lab.lab_agent_launch(
+            args.ssh_alias,
+            tool=args.tool,
+            instructions=args.instructions,
+            cwd=args.cwd,
+            name=args.name,
+            agent_type=args.agent_type,
+            tags=_parse_json_arg(args.tags),
+        )
+    if cmd == "lab-agent-list":
+        return lab.lab_agent_list(args.ssh_alias, include_stopped=args.include_stopped)
+    if cmd == "lab-agent-read":
+        return lab.lab_agent_read(args.ssh_alias, args.session_id, lines=args.lines)
+    if cmd == "lab-agent-send":
+        return lab.lab_agent_send(args.ssh_alias, args.session_id, args.text)
     return None
 
 

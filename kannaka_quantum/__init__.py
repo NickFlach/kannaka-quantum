@@ -28,6 +28,11 @@ from .lab import (
     lab_provision_instance,
     lab_start_instance,
     lab_stop_instance,
+    lab_ssh_configure,
+    lab_agent_launch,
+    lab_agent_list,
+    lab_agent_read,
+    lab_agent_send,
 )
 
 __all__ = [
@@ -52,5 +57,10 @@ __all__ = [
     "lab_provision_instance",
     "lab_start_instance",
     "lab_stop_instance",
+    "lab_ssh_configure",
+    "lab_agent_launch",
+    "lab_agent_list",
+    "lab_agent_read",
+    "lab_agent_send",
 ]
-__version__ = "0.2.0"
+__version__ = "0.2.1"

@@ -483,3 +483,87 @@ def lab_stop_instance(instance_id: str) -> dict[str, Any]:
         "note": "Disk preserved; a stopped instance still bills stopped_credits_per_min until terminated "
         "(terminate via the qBraid web UI to free the disk and stop all billing).",
     }
+
+
+# --------------------------------------------------------------------------- #
+# Phase 4 — remote agents (run a coding agent ON a provisioned instance via SSH)
+# --------------------------------------------------------------------------- #
+def _agent_launcher():
+    from qbraid_core.services.agents import AgentLauncher
+
+    return AgentLauncher()
+
+
+def _agent_summary(s: Any) -> dict[str, Any]:
+    return {
+        "session_id": getattr(s, "session_id", None),
+        "tool": getattr(s, "tool", None),
+        "status": _dump(getattr(s, "status", None)),
+        "cwd": getattr(s, "cwd", None),
+        "model_name": getattr(s, "model_name", None),
+        "cost_usd": getattr(s, "cost_usd", None),
+        "total_tokens": getattr(s, "total_tokens", None),
+        "agent_type": getattr(s, "agent_type", None),
+        "last_activity": _dump(getattr(s, "last_activity", None)),
+    }
+
+
+def lab_ssh_configure(instance_id: str) -> dict[str, Any]:
+    """Configure local SSH access to a running on-demand instance and return its
+    stable SSH alias — the precursor to any lab_agent_* remote operation."""
+    from qbraid_core.services.compute import ComputeClient
+
+    client = _client(ComputeClient)
+    cfg = client.configure_ssh_for_instance(instance_id)
+    alias = ComputeClient.bma_ssh_alias(instance_id)
+    return {
+        "instance_id": instance_id,
+        "ssh_alias": alias,
+        "config": _dump(cfg),
+        "note": "Use this ssh_alias for lab_agent_launch / lab_agent_list / lab_agent_read / lab_agent_send.",
+    }
+
+
+def lab_agent_launch(
+    ssh_alias: str,
+    tool: str = "claude",
+    instructions: Optional[str] = None,
+    cwd: Optional[str] = None,
+    name: Optional[str] = None,
+    agent_type: Optional[str] = None,
+    tags: Optional[Sequence[str]] = None,
+) -> dict[str, Any]:
+    """Launch a coding agent (claude / codex / opencode) ON a remote provisioned
+    instance over SSH — the kannaka agent driving another agent on cloud compute.
+    Requires SSH already configured (lab_ssh_configure) and the instance running."""
+    s = _agent_launcher().remote_launch(
+        ssh_alias,
+        tool,
+        cwd=cwd,
+        name=name,
+        instructions=instructions,
+        agent_type=agent_type,
+        tags=list(tags) if tags else None,
+    )
+    out = _agent_summary(s)
+    out["launched"] = True
+    out["ssh_alias"] = ssh_alias
+    return out
+
+
+def lab_agent_list(ssh_alias: str, include_stopped: bool = False) -> dict[str, Any]:
+    """List coding agents running on a remote instance."""
+    sessions = _agent_launcher().remote_list(ssh_alias, include_stopped=include_stopped)
+    return {"ssh_alias": ssh_alias, "agents": [_agent_summary(s) for s in sessions], "count": len(sessions)}
+
+
+def lab_agent_read(ssh_alias: str, session_id: str, lines: int = 50) -> dict[str, Any]:
+    """Read recent terminal output from a remote agent session."""
+    out = _agent_launcher().remote_read(ssh_alias, session_id, lines=lines)
+    return {"ssh_alias": ssh_alias, "session_id": session_id, "output": out}
+
+
+def lab_agent_send(ssh_alias: str, session_id: str, text: str) -> dict[str, Any]:
+    """Send a prompt/keystrokes to a remote agent session."""
+    ok = _agent_launcher().remote_send(ssh_alias, session_id, text)
+    return {"ssh_alias": ssh_alias, "session_id": session_id, "sent": bool(ok)}

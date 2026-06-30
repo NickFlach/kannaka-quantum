@@ -63,4 +63,4 @@ __all__ = [
     "lab_agent_read",
     "lab_agent_send",
 ]
-__version__ = "0.2.1"
+__version__ = "0.2.2"

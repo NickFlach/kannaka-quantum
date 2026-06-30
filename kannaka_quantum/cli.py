@@ -195,6 +195,11 @@ def build_parser() -> argparse.ArgumentParser:
     asnd.add_argument("--session-id", required=True)
     asnd.add_argument("--text", required=True)
 
+    sb = sub.add_parser("ssh-bridge", help="Windows-safe websocket<->stdio SSH ProxyCommand shim")
+    sb.add_argument("url")
+    sb.add_argument("--token", default=None)
+    sb.add_argument("--ping-interval", type=float, default=30.0)
+
     sub.add_parser("mcp", help="launch the MCP server (stdio)")
     return p
 
@@ -329,6 +334,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
             run_stdio()
             return 0
+        elif args.cmd == "ssh-bridge":
+            # Raw stdio passthrough (no JSON) — it IS the SSH transport.
+            from .ssh_bridge import run_ssh_bridge
+
+            return run_ssh_bridge(args.url, token=args.token, ping_interval=args.ping_interval)
         elif args.cmd.startswith("lab-"):
             out = _dispatch_lab(args)
             if out is None:  # pragma: no cover

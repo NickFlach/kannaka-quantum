@@ -20,6 +20,8 @@ invoice.
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from typing import Any, Optional, Sequence, Union
 
 from .core import _resolve_api_key, QBRAID_USD_PER_CREDIT
@@ -489,14 +491,28 @@ def lab_stop_instance(instance_id: str) -> dict[str, Any]:
 # Phase 4 — remote agents (run a coding agent ON a provisioned instance via SSH)
 # --------------------------------------------------------------------------- #
 def _agent_launcher():
-    from qbraid_core.services.agents import AgentLauncher
+    """Construct an AgentLauncher for REMOTE (SSH) operations.
 
-    return AgentLauncher()
+    qBraid's AgentLauncher.__init__ calls require_tmux(), but its remote_*
+    methods only run tmux on the REMOTE host over SSH — so on a machine
+    without local tmux (e.g. Windows) we bypass that local check for the
+    remote path. (Local launch/list/send still need real tmux.)"""
+    from qbraid_core.services.agents import launcher as _launcher
+
+    orig = _launcher.require_tmux
+    _launcher.require_tmux = lambda: None
+    try:
+        return _launcher.AgentLauncher()
+    finally:
+        _launcher.require_tmux = orig
 
 
 def _agent_summary(s: Any) -> dict[str, Any]:
+    sid = getattr(s, "session_id", None)
+    if isinstance(sid, str):
+        sid = sid.strip()
     return {
-        "session_id": getattr(s, "session_id", None),
+        "session_id": sid,
         "tool": getattr(s, "tool", None),
         "status": _dump(getattr(s, "status", None)),
         "cwd": getattr(s, "cwd", None),
@@ -508,20 +524,65 @@ def _agent_summary(s: Any) -> dict[str, Any]:
     }
 
 
+def _harden_windows_ssh(cfg: dict) -> list[str]:
+    """Make qBraid's generated SSH config usable on Windows. Two fixes, both
+    verified necessary live: (1) qBraid's ProxyCommand bridge crashes under the
+    Windows asyncio Proactor loop (connect_read_pipe(stdin) → WinError 6), so
+    repoint it at our thread-based ssh-bridge shim; (2) Windows OpenSSH refuses
+    config/key files that carry an inherited 'OWNER RIGHTS' ACE, so reset their
+    ACLs to the current user only."""
+    fixes: list[str] = []
+    config_file = cfg.get("config_file")
+    identity_file = cfg.get("identity_file")
+    # 1. Repoint the ProxyCommand to our Windows-safe shim.
+    if config_file and os.path.exists(config_file):
+        try:
+            with open(config_file, "r", encoding="utf-8") as f:
+                text = f.read()
+            new = text.replace(
+                "-m qbraid_core.services.compute.ssh bridge",
+                "-m kannaka_quantum ssh-bridge",
+            )
+            if new != text:
+                with open(config_file, "w", encoding="utf-8") as f:
+                    f.write(new)
+                fixes.append("proxycommand→kannaka-ssh-bridge")
+        except Exception as e:  # pragma: no cover
+            fixes.append(f"proxycommand-rewrite-failed:{e}")
+    # 2. Tighten ACLs (must run AFTER the rewrite, which can re-inherit them).
+    user = os.environ.get("USERNAME") or os.environ.get("USER") or "%USERNAME%"
+    for path in (config_file, identity_file):
+        if path and os.path.exists(path):
+            try:
+                subprocess.run(
+                    ["icacls", path, "/inheritance:r", "/grant:r", f"{user}:F"],
+                    capture_output=True, text=True, check=False,
+                )
+                fixes.append(f"acl:{os.path.basename(path)}")
+            except Exception as e:  # pragma: no cover
+                fixes.append(f"acl-failed:{e}")
+    return fixes
+
+
 def lab_ssh_configure(instance_id: str) -> dict[str, Any]:
     """Configure local SSH access to a running on-demand instance and return its
-    stable SSH alias — the precursor to any lab_agent_* remote operation."""
+    stable SSH alias — the precursor to any lab_agent_* remote operation. On
+    Windows it also applies the ssh-bridge + ACL fixes the remote path needs."""
     from qbraid_core.services.compute import ComputeClient
 
     client = _client(ComputeClient)
     cfg = client.configure_ssh_for_instance(instance_id)
     alias = ComputeClient.bma_ssh_alias(instance_id)
-    return {
+    cfg_dict = cfg if isinstance(cfg, dict) else _dump(cfg)
+    out = {
         "instance_id": instance_id,
         "ssh_alias": alias,
-        "config": _dump(cfg),
+        "config": cfg_dict,
         "note": "Use this ssh_alias for lab_agent_launch / lab_agent_list / lab_agent_read / lab_agent_send.",
     }
+    if sys.platform == "win32" and isinstance(cfg_dict, dict):
+        out["windows_fixes"] = _harden_windows_ssh(cfg_dict)
+    return out
 
 
 def lab_agent_launch(

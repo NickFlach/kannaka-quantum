@@ -13,6 +13,22 @@ from .core import (
     run_qasm,
     run_qiskit,
 )
+from .lab import (
+    lab_compute_down,
+    lab_compute_status,
+    lab_compute_up,
+    lab_compute_usage,
+    lab_create_env,
+    lab_credits,
+    lab_delete_env,
+    lab_env_info,
+    lab_list_envs,
+    lab_list_instances,
+    lab_list_profiles,
+    lab_provision_instance,
+    lab_start_instance,
+    lab_stop_instance,
+)
 
 __all__ = [
     "DEFAULT_DEVICE",
@@ -21,5 +37,20 @@ __all__ = [
     "quantum_recall",
     "run_qasm",
     "run_qiskit",
+    # qBraid Lab / infrastructure
+    "lab_credits",
+    "lab_list_envs",
+    "lab_env_info",
+    "lab_list_profiles",
+    "lab_compute_status",
+    "lab_compute_usage",
+    "lab_list_instances",
+    "lab_create_env",
+    "lab_delete_env",
+    "lab_compute_up",
+    "lab_compute_down",
+    "lab_provision_instance",
+    "lab_start_instance",
+    "lab_stop_instance",
 ]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

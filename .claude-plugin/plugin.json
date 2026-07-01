@@ -1,7 +1,7 @@
 {
   "name": "kannaka-quantum",
-  "version": "0.1.0",
-  "description": "Kannaka Quantum — run Kannaka's wave-interference memory on real quantum hardware. Resonance recall as amplitude amplification, true quantum random numbers, and OpenQASM 3 circuits on qBraid's free simulator (default) or real QPUs (IonQ/Rigetti/IQM/AQT). Ships a SKILL and an MCP server.",
+  "version": "0.2.3",
+  "description": "Kannaka Quantum — run Kannaka's wave-interference memory on real quantum hardware, and drive qBraid Lab compute + autonomous remote coding agents. Resonance recall as amplitude amplification, true quantum random numbers, and OpenQASM 3 circuits on qBraid's free simulator (default) or real QPUs (IonQ/Rigetti/IQM/AQT); plus qBraid Lab ops — environments, GPU/CPU compute provisioning, and launching/driving coding agents on remote instances over SSH. Ships a SKILL and an MCP server.",
   "author": {
     "name": "flaukowski",
     "email": "nflach78@gmail.com"
@@ -14,6 +14,9 @@
     "kannaka",
     "amplitude-amplification",
     "mcp",
-    "qrng"
+    "qrng",
+    "qbraid-lab",
+    "compute",
+    "remote-agents"
   ]
 }

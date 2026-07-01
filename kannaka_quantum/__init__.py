@@ -33,6 +33,7 @@ from .lab import (
     lab_agent_list,
     lab_agent_read,
     lab_agent_send,
+    lab_agent_setup,
 )
 
 __all__ = [
@@ -62,5 +63,6 @@ __all__ = [
     "lab_agent_list",
     "lab_agent_read",
     "lab_agent_send",
+    "lab_agent_setup",
 ]
-__version__ = "0.2.2"
+__version__ = "0.2.3"

@@ -10,6 +10,7 @@ import json
 import sys
 from typing import Optional
 
+from . import bench
 from . import core
 from . import entropy
 from . import lab
@@ -109,6 +110,33 @@ def build_parser() -> argparse.ArgumentParser:
     rc.add_argument("--no-amplify", action="store_true", help="skip amplitude amplification")
     rc.add_argument("--device", default=core.DEFAULT_DEVICE, help=_DEVICE_HELP)
     _add_spend_opts(rc)
+
+    bn = sub.add_parser(
+        "bench",
+        help="recall-correspondence benchmark over a kannaka-recall-bench/1 corpus",
+    )
+    bn.add_argument("--scenarios", required=True, help="path to a kannaka-recall-bench/1 corpus JSON")
+    bn.add_argument(
+        "--device",
+        default=core.LOCAL_DEVICE,
+        help="backend (default: local state-vector, $0/offline). Use "
+        "'qbraid:qbraid:sim:qir-sv' for the hosted free simulator.",
+    )
+    bn.add_argument("--shots", type=int, default=1024)
+    bn.add_argument("--no-amplify", action="store_true", help="skip amplitude amplification")
+    bn.add_argument("--out", default=None, help="write the full result JSON to this path")
+    bn.add_argument("--baseline", default=None, help="baseline JSON to gate against (regression = agreement drop > threshold)")
+    bn.add_argument(
+        "--regression-threshold",
+        type=float,
+        default=bench.DEFAULT_REGRESSION_POINTS,
+        help="max allowed agreement-rate drop, in points (default 2.0)",
+    )
+    bn.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="write this run as the baseline (to --baseline) and skip the gate",
+    )
 
     # --- qBraid Lab / infrastructure ---------------------------------------
     sub.add_parser("lab-credits", help="show qBraid credit balance")
@@ -364,6 +392,21 @@ def main(argv: Optional[list[str]] = None) -> int:
                 max_credits=args.max_credits,
                 subcategory=args.subcategory,
             )
+        elif args.cmd == "bench":
+            # Prints the result JSON like every other command, but the exit code
+            # carries the regression verdict so CI can gate a PR on it.
+            result, code = bench.bench_command(
+                scenarios=args.scenarios,
+                device=args.device,
+                shots=args.shots,
+                amplify=not args.no_amplify,
+                out=args.out,
+                baseline=args.baseline,
+                regression_threshold=args.regression_threshold,
+                update_baseline=args.update_baseline,
+            )
+            print(json.dumps(result))
+            return code
         elif args.cmd == "mcp":
             from .mcp_server import run_stdio
 

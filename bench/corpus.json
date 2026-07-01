@@ -1,0 +1,843 @@
+{
+  "format": "kannaka-recall-bench/1",
+  "generated_at": "2026-07-01T00:00:00+00:00",
+  "n": 24,
+  "scenarios": [
+    {
+      "query_label": "66ccadd11b50491f",
+      "candidates": [
+        {
+          "label": "90dda3bc58cf6b0c",
+          "amplitude": 0.13108
+        },
+        {
+          "label": "63eca37336233a3c",
+          "amplitude": 0.249165
+        },
+        {
+          "label": "64810d8e6e03c163",
+          "amplitude": 0.432219
+        },
+        {
+          "label": "a7c1375ec47e7ee3",
+          "amplitude": 0.230141
+        },
+        {
+          "label": "3725bc4787c3b883",
+          "amplitude": 0.239332
+        },
+        {
+          "label": "66ccadd11b50491f",
+          "amplitude": 0.756405
+        }
+      ],
+      "classical_argmax": 5,
+      "hemisphere": "right",
+      "timestamp": "2026-07-01T00:00:00+00:00"
+    },
+    {
+      "query_label": "e8d9edf2a1b02725",
+      "candidates": [
+        {
+          "label": "3e814342da7051ce",
+          "amplitude": 0.186068
+        },
+        {
+          "label": "e8d9edf2a1b02725",
+          "amplitude": 0.515838
+        },
+        {
+          "label": "5c41c33dcb2c66b2",
+          "amplitude": 0.210164
+        },
+        {
+          "label": "73bbed1baf575d26",
+          "amplitude": 0.251652
+        }
+      ],
+      "classical_argmax": 1,
+      "hemisphere": "flat",
+      "timestamp": "2026-07-01T00:01:00+00:00"
+    },
+    {
+      "query_label": "dc951e3b2a394dad",
+      "candidates": [
+        {
+          "label": "0abddd00d85362a8",
+          "amplitude": 0.02059
+        },
+        {
+          "label": "c98e29349f34962b",
+          "amplitude": 0.189713
+        },
+        {
+          "label": "77f76555d6d0ddf0",
+          "amplitude": 0.021918
+        },
+        {
+          "label": "dc951e3b2a394dad",
+          "amplitude": 0.582734
+        },
+        {
+          "label": "4faa7ea4f4fa7dc5",
+          "amplitude": 0.061784
+        },
+        {
+          "label": "6025c5966c4cdd5d",
+          "amplitude": 0.02
+        },
+        {
+          "label": "0cc43c8b7889cf66",
+          "amplitude": 0.053885
+        },
+        {
+          "label": "62cb017887792546",
+          "amplitude": 0.052796
+        },
+        {
+          "label": "7d7ba773171329a5",
+          "amplitude": 0.02
+        },
+        {
+          "label": "b57df01e6c5a4e90",
+          "amplitude": 0.047417
+        },
+        {
+          "label": "01ca5fee7d315df8",
+          "amplitude": 0.049959
+        },
+        {
+          "label": "53552ac7b5c5653e",
+          "amplitude": 0.308298
+        },
+        {
+          "label": "57d9f80e64579213",
+          "amplitude": 0.031803
+        },
+        {
+          "label": "dc07b4b4a5fb5c0b",
+          "amplitude": 0.193307
+        },
+        {
+          "label": "198d2b4b75c4d3bf",
+          "amplitude": 0.035053
+        },
+        {
+          "label": "dc7a694a0c999771",
+          "amplitude": 0.114566
+        }
+      ],
+      "classical_argmax": 3,
+      "hemisphere": "right",
+      "timestamp": "2026-07-01T00:02:00+00:00"
+    },
+    {
+      "query_label": "9bf874b0e5d87bbd",
+      "candidates": [
+        {
+          "label": "6279e68bcf37526b",
+          "amplitude": 0.071089
+        },
+        {
+          "label": "34c80c21cf0c6f1f",
+          "amplitude": 0.064303
+        },
+        {
+          "label": "c501965dc2261099",
+          "amplitude": 0.121571
+        },
+        {
+          "label": "00f2d260c353da78",
+          "amplitude": 0.05654
+        },
+        {
+          "label": "a9bf764c8147a00a",
+          "amplitude": 0.114022
+        },
+        {
+          "label": "f8915452e2482aea",
+          "amplitude": 0.279807
+        },
+        {
+          "label": "6ea8052a806b736a",
+          "amplitude": 0.058019
+        },
+        {
+          "label": "5c34dba51940a5bb",
+          "amplitude": 0.405371
+        },
+        {
+          "label": "b9e92957215eabd4",
+          "amplitude": 0.035648
+        },
+        {
+          "label": "f3420fbe0c34d317",
+          "amplitude": 0.284609
+        },
+        {
+          "label": "4c7b6e8adce17ab0",
+          "amplitude": 0.1179
+        },
+        {
+          "label": "81c2f075fd7e6f8a",
+          "amplitude": 0.134857
+        },
+        {
+          "label": "f9b98c2955e2f4de",
+          "amplitude": 0.04939
+        },
+        {
+          "label": "9bf874b0e5d87bbd",
+          "amplitude": 0.906625
+        },
+        {
+          "label": "651183090258851e",
+          "amplitude": 0.078277
+        },
+        {
+          "label": "c5a671ced1335071",
+          "amplitude": 0.065149
+        }
+      ],
+      "classical_argmax": 13,
+      "hemisphere": "flat",
+      "timestamp": "2026-07-01T00:03:00+00:00"
+    },
+    {
+      "query_label": "60224306d41ed983",
+      "candidates": [
+        {
+          "label": "60224306d41ed983",
+          "amplitude": 0.548078
+        },
+        {
+          "label": "c0d61fb5bef08266",
+          "amplitude": 0.153894
+        },
+        {
+          "label": "7c865065ed646594",
+          "amplitude": 0.048914
+        },
+        {
+          "label": "1ef5d20a972bc1be",
+          "amplitude": 0.042599
+        },
+        {
+          "label": "f44adb6b6c1690ed",
+          "amplitude": 0.088282
+        },
+        {
+          "label": "38b4d2e97a42919e",
+          "amplitude": 0.196004
+        },
+        {
+          "label": "a3e41aaabf26fa4f",
+          "amplitude": 0.063329
+        },
+        {
+          "label": "01396672c9a78e4f",
+          "amplitude": 0.128554
+        },
+        {
+          "label": "51eef5f9616768ab",
+          "amplitude": 0.109456
+        },
+        {
+          "label": "1959ff571a2f3eb4",
+          "amplitude": 0.163703
+        },
+        {
+          "label": "d6c0fbaee7f7690f",
+          "amplitude": 0.215804
+        }
+      ],
+      "classical_argmax": 0,
+      "hemisphere": "right",
+      "timestamp": "2026-07-01T00:04:00+00:00"
+    },
+    {
+      "query_label": "8d06c216eb96e1a4",
+      "candidates": [
+        {
+          "label": "8d06c216eb96e1a4",
+          "amplitude": 0.615119
+        },
+        {
+          "label": "7a2ba04e4be35a45",
+          "amplitude": 0.308227
+        },
+        {
+          "label": "5690cccc25a2ffce",
+          "amplitude": 0.275902
+        },
+        {
+          "label": "213649b38cd799ca",
+          "amplitude": 0.156616
+        }
+      ],
+      "classical_argmax": 0,
+      "hemisphere": "flat",
+      "timestamp": "2026-07-01T00:05:00+00:00"
+    },
+    {
+      "query_label": "61f3d4dbd24892c2",
+      "candidates": [
+        {
+          "label": "c52b069d0cedb6ce",
+          "amplitude": 0.156878
+        },
+        {
+          "label": "61f3d4dbd24892c2",
+          "amplitude": 0.594177
+        }
+      ],
+      "classical_argmax": 1,
+      "hemisphere": "right",
+      "timestamp": "2026-07-01T00:06:00+00:00"
+    },
+    {
+      "query_label": "4cc3a2a0be31420a",
+      "candidates": [
+        {
+          "label": "74b7282c6cb91b51",
+          "amplitude": 0.349279
+        },
+        {
+          "label": "3e63aadf275eddb9",
+          "amplitude": 0.251844
+        },
+        {
+          "label": "4cc3a2a0be31420a",
+          "amplitude": 0.849176
+        },
+        {
+          "label": "d0af93c3501467c7",
+          "amplitude": 0.522462
+        },
+        {
+          "label": "d8f6232c225821a7",
+          "amplitude": 0.290723
+        }
+      ],
+      "classical_argmax": 2,
+      "hemisphere": "flat",
+      "timestamp": "2026-07-01T00:07:00+00:00"
+    },
+    {
+      "query_label": "d8953e23cf6be6c5",
+      "candidates": [
+        {
+          "label": "4f1329d164569ebe",
+          "amplitude": 0.084604
+        },
+        {
+          "label": "d8953e23cf6be6c5",
+          "amplitude": 0.499716
+        }
+      ],
+      "classical_argmax": 1,
+      "hemisphere": "right",
+      "timestamp": "2026-07-01T00:08:00+00:00"
+    },
+    {
+      "query_label": "3a3f1ba1b87d8230",
+      "candidates": [
+        {
+          "label": "895123fd198c8f8a",
+          "amplitude": 0.060255
+        },
+        {
+          "label": "3a3f1ba1b87d8230",
+          "amplitude": 0.682371
+        },
+        {
+          "label": "fc75277162087942",
+          "amplitude": 0.270145
+        },
+        {
+          "label": "7f36a78dd7cb36f8",
+          "amplitude": 0.338086
+        },
+        {
+          "label": "357951358a80d739",
+          "amplitude": 0.30778
+        }
+      ],
+      "classical_argmax": 1,
+      "hemisphere": "flat",
+      "timestamp": "2026-07-01T00:09:00+00:00"
+    },
+    {
+      "query_label": "27c904c5056bc8af",
+      "candidates": [
+        {
+          "label": "27c904c5056bc8af",
+          "amplitude": 0.609963
+        },
+        {
+          "label": "c6fc323f6237a795",
+          "amplitude": 0.149071
+        }
+      ],
+      "classical_argmax": 0,
+      "hemisphere": "right",
+      "timestamp": "2026-07-01T00:10:00+00:00"
+    },
+    {
+      "query_label": "09d69e584e7a6701",
+      "candidates": [
+        {
+          "label": "9f70af4601ecf028",
+          "amplitude": 0.02
+        },
+        {
+          "label": "b02605ddb07c4ecc",
+          "amplitude": 0.042819
+        },
+        {
+          "label": "cde1b962fc6d2fd9",
+          "amplitude": 0.02
+        },
+        {
+          "label": "bcff4d54de00fa71",
+          "amplitude": 0.171471
+        },
+        {
+          "label": "178915c6a8f26f49",
+          "amplitude": 0.02
+        },
+        {
+          "label": "dd46e6455aa36c3c",
+          "amplitude": 0.084181
+        },
+        {
+          "label": "3b865f4b106a7c09",
+          "amplitude": 0.059802
+        },
+        {
+          "label": "09d69e584e7a6701",
+          "amplitude": 0.503886
+        },
+        {
+          "label": "5aa8e15ece33d259",
+          "amplitude": 0.058752
+        },
+        {
+          "label": "ef89d545d98859e4",
+          "amplitude": 0.175771
+        },
+        {
+          "label": "45649d966a38d25b",
+          "amplitude": 0.180032
+        },
+        {
+          "label": "ef727433863d9608",
+          "amplitude": 0.306068
+        },
+        {
+          "label": "e3b0faf4cb4aee43",
+          "amplitude": 0.03576
+        },
+        {
+          "label": "3754c7dcee881352",
+          "amplitude": 0.025595
+        },
+        {
+          "label": "6d1bd054c925597a",
+          "amplitude": 0.037481
+        },
+        {
+          "label": "f6708a0ec5217c98",
+          "amplitude": 0.025973
+        }
+      ],
+      "classical_argmax": 7,
+      "hemisphere": "flat",
+      "timestamp": "2026-07-01T00:11:00+00:00"
+    },
+    {
+      "query_label": "bf6c0915abd86976",
+      "candidates": [
+        {
+          "label": "bf6c0915abd86976",
+          "amplitude": 0.513612
+        },
+        {
+          "label": "1368f06c09e614f8",
+          "amplitude": 0.144024
+        },
+        {
+          "label": "edd77313aaaad612",
+          "amplitude": 0.142043
+        },
+        {
+          "label": "10735a3bac046b13",
+          "amplitude": 0.097473
+        }
+      ],
+      "classical_argmax": 0,
+      "hemisphere": "right",
+      "timestamp": "2026-07-01T00:12:00+00:00"
+    },
+    {
+      "query_label": "06efb784f0351454",
+      "candidates": [
+        {
+          "label": "7dd3f22c3bdb35ed",
+          "amplitude": 0.210563
+        },
+        {
+          "label": "6628c2330388adc0",
+          "amplitude": 0.199218
+        },
+        {
+          "label": "4b0f6f7834932b8b",
+          "amplitude": 0.292282
+        },
+        {
+          "label": "801860a4f8f91550",
+          "amplitude": 0.312272
+        },
+        {
+          "label": "06efb784f0351454",
+          "amplitude": 0.619835
+        }
+      ],
+      "classical_argmax": 4,
+      "hemisphere": "flat",
+      "timestamp": "2026-07-01T00:13:00+00:00"
+    },
+    {
+      "query_label": "34e99bd7d2c65248",
+      "candidates": [
+        {
+          "label": "858e058c1c0e3890",
+          "amplitude": 0.365891
+        },
+        {
+          "label": "6c06fb9b64fdf509",
+          "amplitude": 0.104084
+        },
+        {
+          "label": "34e99bd7d2c65248",
+          "amplitude": 0.807904
+        },
+        {
+          "label": "e9ef2ea263b3d724",
+          "amplitude": 0.16254
+        },
+        {
+          "label": "a6b5341b14b02ce6",
+          "amplitude": 0.081135
+        },
+        {
+          "label": "87a621d21c532bb1",
+          "amplitude": 0.113242
+        },
+        {
+          "label": "50d3183bac35e323",
+          "amplitude": 0.045559
+        },
+        {
+          "label": "49915f74969bd85d",
+          "amplitude": 0.260316
+        }
+      ],
+      "classical_argmax": 2,
+      "hemisphere": "right",
+      "timestamp": "2026-07-01T00:14:00+00:00"
+    },
+    {
+      "query_label": "3912f610c4a47fc4",
+      "candidates": [
+        {
+          "label": "f083dd9ba11fff22",
+          "amplitude": 0.053492
+        },
+        {
+          "label": "6b858a7ec49ffe13",
+          "amplitude": 0.051936
+        },
+        {
+          "label": "edee67477b22b6b2",
+          "amplitude": 0.118084
+        },
+        {
+          "label": "79cdcc7e8263b84a",
+          "amplitude": 0.089788
+        },
+        {
+          "label": "3912f610c4a47fc4",
+          "amplitude": 0.538953
+        }
+      ],
+      "classical_argmax": 4,
+      "hemisphere": "flat",
+      "timestamp": "2026-07-01T00:15:00+00:00"
+    },
+    {
+      "query_label": "4935c9c645aeb6a7",
+      "candidates": [
+        {
+          "label": "c0a6c41672ab6032",
+          "amplitude": 0.390527
+        },
+        {
+          "label": "ca88c6e76612f5e1",
+          "amplitude": 0.373273
+        },
+        {
+          "label": "dbac5af336847578",
+          "amplitude": 0.118376
+        },
+        {
+          "label": "4935c9c645aeb6a7",
+          "amplitude": 0.910807
+        }
+      ],
+      "classical_argmax": 3,
+      "hemisphere": "right",
+      "timestamp": "2026-07-01T00:16:00+00:00"
+    },
+    {
+      "query_label": "ac28ff436d7bd367",
+      "candidates": [
+        {
+          "label": "83885c092bd96e46",
+          "amplitude": 0.130038
+        },
+        {
+          "label": "4ef937091d3e4711",
+          "amplitude": 0.412391
+        },
+        {
+          "label": "69047c90da460fcb",
+          "amplitude": 0.142194
+        },
+        {
+          "label": "7abbf0edf4f9f372",
+          "amplitude": 0.100936
+        },
+        {
+          "label": "260a842876a4086f",
+          "amplitude": 0.049683
+        },
+        {
+          "label": "ac28ff436d7bd367",
+          "amplitude": 0.902735
+        },
+        {
+          "label": "1ff7f29481937754",
+          "amplitude": 0.484365
+        },
+        {
+          "label": "1b1af46294c09e89",
+          "amplitude": 0.109937
+        },
+        {
+          "label": "1ce8b1f51e31ce71",
+          "amplitude": 0.09647
+        },
+        {
+          "label": "5a9da9e28b0cf266",
+          "amplitude": 0.227685
+        },
+        {
+          "label": "3d18f425d1d7f7a4",
+          "amplitude": 0.065294
+        }
+      ],
+      "classical_argmax": 5,
+      "hemisphere": "flat",
+      "timestamp": "2026-07-01T00:17:00+00:00"
+    },
+    {
+      "query_label": "1d429b3dd0f35d7b",
+      "candidates": [
+        {
+          "label": "0b8a0aeeebda2e0e",
+          "amplitude": 0.127641
+        },
+        {
+          "label": "cb9585a617044de9",
+          "amplitude": 0.099359
+        },
+        {
+          "label": "efa649a8da6d96b3",
+          "amplitude": 0.18973
+        },
+        {
+          "label": "26183fe49f01db6e",
+          "amplitude": 0.379339
+        },
+        {
+          "label": "1d429b3dd0f35d7b",
+          "amplitude": 0.596225
+        }
+      ],
+      "classical_argmax": 4,
+      "hemisphere": "right",
+      "timestamp": "2026-07-01T00:18:00+00:00"
+    },
+    {
+      "query_label": "9df91fe0c6e1b420",
+      "candidates": [
+        {
+          "label": "81dad5c0067d7ad0",
+          "amplitude": 0.110014
+        },
+        {
+          "label": "98c6609ec3a520a7",
+          "amplitude": 0.067823
+        },
+        {
+          "label": "e3ec0b003fa30358",
+          "amplitude": 0.147383
+        },
+        {
+          "label": "9df91fe0c6e1b420",
+          "amplitude": 0.512132
+        },
+        {
+          "label": "150ac9790903c6db",
+          "amplitude": 0.046175
+        },
+        {
+          "label": "facffa97565562d7",
+          "amplitude": 0.124767
+        },
+        {
+          "label": "f985c5e9d06b22f7",
+          "amplitude": 0.109683
+        },
+        {
+          "label": "524c5b34ce3611f5",
+          "amplitude": 0.088352
+        },
+        {
+          "label": "f1226e46dd0baaae",
+          "amplitude": 0.028861
+        },
+        {
+          "label": "ba1ebcdef9d21c51",
+          "amplitude": 0.231385
+        },
+        {
+          "label": "6619e375cfe8aa20",
+          "amplitude": 0.090009
+        }
+      ],
+      "classical_argmax": 3,
+      "hemisphere": "flat",
+      "timestamp": "2026-07-01T00:19:00+00:00"
+    },
+    {
+      "query_label": "12acbf076999db6e",
+      "candidates": [
+        {
+          "label": "a9f6e2412ced722b",
+          "amplitude": 0.159483
+        },
+        {
+          "label": "12acbf076999db6e",
+          "amplitude": 0.509925
+        },
+        {
+          "label": "1ec22212f4ab1580",
+          "amplitude": 0.23292
+        },
+        {
+          "label": "ea692cef62f8a7c7",
+          "amplitude": 0.132173
+        },
+        {
+          "label": "0ba721af7c9ba9b7",
+          "amplitude": 0.137569
+        }
+      ],
+      "classical_argmax": 1,
+      "hemisphere": "right",
+      "timestamp": "2026-07-01T00:20:00+00:00"
+    },
+    {
+      "query_label": "9e06a7ccc3437985",
+      "candidates": [
+        {
+          "label": "98a95bb64b75ba82",
+          "amplitude": 0.383158
+        },
+        {
+          "label": "39a3ccbbf63cb6a4",
+          "amplitude": 0.415323
+        },
+        {
+          "label": "9e06a7ccc3437985",
+          "amplitude": 0.938938
+        },
+        {
+          "label": "ed3a8662f08e50d5",
+          "amplitude": 0.206172
+        }
+      ],
+      "classical_argmax": 2,
+      "hemisphere": "flat",
+      "timestamp": "2026-07-01T00:21:00+00:00"
+    },
+    {
+      "query_label": "370b08721888c29c",
+      "candidates": [
+        {
+          "label": "81d8554f1167e873",
+          "amplitude": 0.239447
+        },
+        {
+          "label": "370b08721888c29c",
+          "amplitude": 0.481246
+        }
+      ],
+      "classical_argmax": 1,
+      "hemisphere": "right",
+      "timestamp": "2026-07-01T00:22:00+00:00"
+    },
+    {
+      "query_label": "d9b314e61afd9304",
+      "candidates": [
+        {
+          "label": "f1ffe764897e4ba4",
+          "amplitude": 0.239715
+        },
+        {
+          "label": "d9b314e61afd9304",
+          "amplitude": 0.81636
+        },
+        {
+          "label": "3fe0c1ca2432af88",
+          "amplitude": 0.140422
+        },
+        {
+          "label": "847a5f2bff06006a",
+          "amplitude": 0.054696
+        },
+        {
+          "label": "f96158c8c46ba2dc",
+          "amplitude": 0.170775
+        },
+        {
+          "label": "fb70415a13bec86f",
+          "amplitude": 0.12482
+        },
+        {
+          "label": "cd46ce13cc34c9bb",
+          "amplitude": 0.272835
+        },
+        {
+          "label": "52a257a53f351929",
+          "amplitude": 0.165293
+        }
+      ],
+      "classical_argmax": 1,
+      "hemisphere": "flat",
+      "timestamp": "2026-07-01T00:23:00+00:00"
+    }
+  ]
+}

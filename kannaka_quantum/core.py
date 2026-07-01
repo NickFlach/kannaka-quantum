@@ -33,6 +33,16 @@ import numpy as np
 DEFAULT_DEVICE = "qbraid:qbraid:sim:qir-sv"
 SIM_QUBIT_CAP = 28
 
+#: A fully local, credentials-free state-vector backend (qiskit only — no qBraid
+#: account, no network, $0). Circuits whose device id starts with ``local:`` are
+#: evaluated here instead of being submitted to a provider. Same circuit build
+#: and same measured-index decode as the hosted simulator, so the recall
+#: correspondence can be exercised hermetically (used by the benchmark harness
+#: and CI). It is NOT a valid entropy source — ``qrng``/``harvest`` still refuse
+#: simulators for the reservoir.
+LOCAL_PREFIX = "local:"
+LOCAL_DEVICE = "local:statevector"
+
 #: Devices whose id starts with this route to OpenQuantum (Quantum Rings) instead
 #: of qBraid. Form: ``openquantum:<backend short_code>`` e.g. ``openquantum:iqm:garnet``.
 OPENQUANTUM_PREFIX = "openquantum:"
@@ -440,6 +450,32 @@ def run_qasm(
     return out
 
 
+def _run_local_circuit(circuit, shots: int, device: str, seed: int = 1234) -> dict[str, Any]:
+    """Sample a Qiskit circuit on a local, noiseless state-vector — no qBraid
+    account, no network. Returns the same ``{device, shots, job_id, counts}``
+    shape as the hosted path so callers stay backend-agnostic.
+
+    Measurement bitstrings are emitted big-endian (``int(bits, 2)`` == the qiskit
+    basis index), which is exactly what :func:`_measured_index` parses for a
+    non-``qbraid:`` device — so recall decodes a local run identically to a
+    hosted one.
+    """
+    from qiskit.quantum_info import Statevector
+
+    base = circuit.remove_final_measurements(inplace=False)
+    probs = np.asarray(Statevector.from_instruction(base).probabilities(), dtype=float)
+    probs = np.clip(probs, 0.0, None)
+    total = probs.sum()
+    probs = probs / total if total > 0 else np.full(len(probs), 1.0 / len(probs))
+    n = base.num_qubits
+    rng = np.random.default_rng(seed)
+    counts: dict[str, int] = {}
+    for idx in rng.choice(len(probs), size=int(shots), p=probs):
+        bits = format(int(idx), f"0{n}b")
+        counts[bits] = counts.get(bits, 0) + 1
+    return {"device": device, "shots": int(shots), "job_id": None, "counts": counts}
+
+
 def run_qiskit(
     circuit,
     device: str = DEFAULT_DEVICE,
@@ -448,7 +484,14 @@ def run_qiskit(
     max_credits: Optional[float] = None,
     subcategory: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Run a Qiskit circuit (serialized to OpenQASM 3) on a device."""
+    """Run a Qiskit circuit on a device.
+
+    ``local:*`` devices are evaluated on a local state-vector (no provider);
+    everything else is serialized to OpenQASM 3 and submitted via :func:`run_qasm`.
+    """
+    if device.startswith(LOCAL_PREFIX):
+        return _run_local_circuit(circuit, shots, device)
+
     from qiskit.qasm3 import dumps
 
     return run_qasm(

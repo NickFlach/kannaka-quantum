@@ -195,6 +195,12 @@ def build_parser() -> argparse.ArgumentParser:
     asnd.add_argument("--session-id", required=True)
     asnd.add_argument("--text", required=True)
 
+    aset = sub.add_parser("lab-agent-setup", help="prep a remote instance for autonomous claude (key+onboarding+model)")
+    aset.add_argument("--ssh-alias", required=True)
+    aset.add_argument("--provider", default="anthropic")
+    aset.add_argument("--model", default="claude-sonnet-4-6")
+    aset.add_argument("--api-key", default=None)
+
     sb = sub.add_parser("ssh-bridge", help="Windows-safe websocket<->stdio SSH ProxyCommand shim")
     sb.add_argument("url")
     sb.add_argument("--token", default=None)
@@ -283,6 +289,8 @@ def _dispatch_lab(args) -> Optional[dict]:
         return lab.lab_agent_read(args.ssh_alias, args.session_id, lines=args.lines)
     if cmd == "lab-agent-send":
         return lab.lab_agent_send(args.ssh_alias, args.session_id, args.text)
+    if cmd == "lab-agent-setup":
+        return lab.lab_agent_setup(args.ssh_alias, provider=args.provider, model=args.model, api_key=args.api_key)
     return None
 
 

@@ -19,9 +19,12 @@ invoice.
 
 from __future__ import annotations
 
+import json
 import os
+import shlex
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any, Optional, Sequence, Union
 
 from .core import _resolve_api_key, QBRAID_USD_PER_CREDIT
@@ -628,3 +631,107 @@ def lab_agent_send(ssh_alias: str, session_id: str, text: str) -> dict[str, Any]
     """Send a prompt/keystrokes to a remote agent session."""
     ok = _agent_launcher().remote_send(ssh_alias, session_id, text)
     return {"ssh_alias": ssh_alias, "session_id": session_id, "sent": bool(ok)}
+
+
+def _remote_ssh_py(ssh_alias: str, script: str, stdin: str = "") -> str:
+    """Run a Python script on the remote instance over SSH, robustly.
+
+    SSH flattens argv into a single remote-shell string, so a bare
+    ``ssh alias python3 -c <multiline>`` gets re-split by the remote shell.
+    Shell-quote the whole ``python3 -c ...`` so it arrives as one argument.
+    The script reads any payload (e.g. the API key) from stdin, keeping secrets
+    out of argv / the remote process list."""
+    remote = "python3 -c " + shlex.quote(script)
+    r = subprocess.run(
+        ["ssh", "-o", "BatchMode=yes", ssh_alias, remote],
+        input=stdin, capture_output=True, text=True, timeout=90,
+    )
+    out = (r.stdout or "").strip()
+    if r.returncode != 0 and not out:
+        raise RuntimeError(f"remote setup failed (rc={r.returncode}): {(r.stderr or '').strip()[:300]}")
+    return out
+
+
+def _resolve_provider_key(provider: str) -> Optional[str]:
+    """Resolve an agent API key: env var → ~/.kannaka/config.toml [llm]."""
+    provider = (provider or "anthropic").lower()
+    env_name = "OPENAI_API_KEY" if provider in ("openai", "codex") else "ANTHROPIC_API_KEY"
+    env = os.environ.get(env_name)
+    if env:
+        return env.strip()
+    if provider in ("anthropic", "claude"):
+        try:
+            import tomllib
+
+            cfg = tomllib.loads((Path.home() / ".kannaka" / "config.toml").read_text())
+            llm = cfg.get("llm", {})
+            if str(llm.get("provider", "")).lower() == "anthropic" and llm.get("api_key"):
+                return str(llm["api_key"]).strip()
+        except Exception:
+            pass
+    return None
+
+
+#: Remote setup script — run on the instance to make a launched claude agent
+#: fully autonomous (auth + skip onboarding + valid model). Reads {key, model}
+#: from stdin. Verified live 2026-06-30.
+_AGENT_SETUP_SCRIPT = r'''
+import sys, json, pathlib, os
+data = json.load(sys.stdin)
+key = data["key"]; model = data.get("model")
+home = pathlib.Path.home()
+cdir = home / ".claude"; cdir.mkdir(parents=True, exist_ok=True)
+# 1. API key via Claude Code's apiKeyHelper (survives qBraid's settings mgmt;
+#    the bare env var never reaches qBraid's SSH-launched agent process).
+kf = cdir / "anthropic_key"; kf.write_text(key); os.chmod(kf, 0o600)
+sf = cdir / "settings.json"
+try: s = json.loads(sf.read_text()) if sf.exists() else {}
+except Exception: s = {}
+s["apiKeyHelper"] = "cat " + str(kf)
+if model: s["model"] = model
+sf.write_text(json.dumps(s, indent=2))
+# 2. pre-accept onboarding / trust so the TUI goes straight to a ready prompt.
+cj = home / ".claude.json"
+try: c = json.loads(cj.read_text()) if cj.exists() else {}
+except Exception: c = {}
+c["hasCompletedOnboarding"] = True
+c.setdefault("theme", "dark")
+c["bypassPermissionsModeAccepted"] = True
+cj.write_text(json.dumps(c, indent=2))
+print(json.dumps({"apiKeyHelper": s["apiKeyHelper"], "model": s.get("model")}))
+'''
+
+
+def lab_agent_setup(
+    ssh_alias: str,
+    provider: str = "anthropic",
+    model: str = "claude-sonnet-4-6",
+    api_key: Optional[str] = None,
+) -> dict[str, Any]:
+    """Prepare a remote instance so a launched claude agent runs AUTONOMOUSLY:
+    inject the Anthropic API key (via Claude Code's ``apiKeyHelper``), pre-accept
+    onboarding, and pin a valid model. Resolves the key from ``api_key`` → env →
+    ``~/.kannaka/config.toml``. NOTE: this uploads the API key to the instance
+    (stored 0600 in ~/.claude). Run after lab_ssh_configure, before
+    lab_agent_launch."""
+    provider = (provider or "anthropic").lower()
+    if provider not in ("anthropic", "claude"):
+        raise RuntimeError(
+            f"lab_agent_setup currently supports the Anthropic (claude) provider, not '{provider}'."
+        )
+    key = api_key or _resolve_provider_key("anthropic")
+    if not key:
+        raise RuntimeError(
+            "no Anthropic API key found — pass api_key, set ANTHROPIC_API_KEY, or "
+            "configure ~/.kannaka/config.toml [llm]."
+        )
+    remote = _remote_ssh_py(ssh_alias, _AGENT_SETUP_SCRIPT, stdin=json.dumps({"key": key, "model": model}))
+    return {
+        "ssh_alias": ssh_alias,
+        "provider": "anthropic",
+        "model": model,
+        "configured": True,
+        "remote": remote,
+        "note": "API key uploaded to the instance (~/.claude, 0600). Now lab_agent_launch, then drive with "
+        "lab_agent_send — qBraid's launch --instructions does not auto-submit, so send the task explicitly.",
+    }

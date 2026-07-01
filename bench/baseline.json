@@ -1,9 +1,9 @@
 {
   "format": "kannaka-recall-bench-baseline/1",
-  "generated_at": "2026-07-01T23:45:35.064992+00:00",
+  "generated_at": "2026-07-01T23:53:27.751546+00:00",
   "device": "local:statevector",
-  "shots": 2048,
-  "scenarios_scored": 24,
+  "shots": 1024,
+  "scenarios_scored": 50,
   "agreement_rate": 100.0,
   "corpus": "bench/corpus.json",
   "note": "Ideal-simulator agreement ceiling for the recall<->amplitude-amplification correspondence. Real-hardware runs (T2.3) sit below this due to noise. Regenerate: kannaka-quantum bench --scenarios bench/corpus.json --baseline <this file> --update-baseline."

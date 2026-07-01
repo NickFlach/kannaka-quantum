@@ -10,7 +10,7 @@ oracle, a flipped endianness, a bad diffuser).
 
 | File | What |
 |------|------|
-| `corpus.json` | Scenario corpus in `kannaka-recall-bench/1` (hashed labels, ≤16 candidates each), exported by kannaka-memory (`kannaka export-recall-scenarios`, T2.1). |
+| `corpus.json` | Scenario corpus in `kannaka-recall-bench/1` (hashed labels, ≤16 candidates each), exported by kannaka-memory (`kannaka export-recall-scenarios`, T2.1). Current corpus: 50 real recall scenarios generated 2026-07-01 from the live 387-memory HRM via `kannaka export-recall-scenarios --n 50 --seed 42` (kannaka-memory PR #481). |
 | `baseline.json` | Committed agreement-rate baseline (ideal-simulator ceiling). The gate fails a run that drops **> 2 points** below it. |
 | `results/sim/DATE.json` | Weekly simulator snapshots committed by `.github/workflows/bench.yml`. |
 

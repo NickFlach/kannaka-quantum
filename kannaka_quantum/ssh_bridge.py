@@ -17,12 +17,32 @@ Windows. It can also be invoked directly:
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from typing import Optional
 
 #: 64 KiB — a single read1 returns whatever is already buffered (interactive
 #: streaming) up to this, so the tunnel stays responsive.
 _CHUNK = 65536
+
+#: Env alternative to ``--token``. qBraid's generated ProxyCommand passes the
+#: WebSocket auth token as an argv value, which is visible in the local process
+#: list (``ps`` / Task Manager) on a shared host. Callers that invoke the bridge
+#: directly can pass the token here instead to keep it out of argv.
+_TOKEN_ENV = "KANNAKA_SSH_BRIDGE_TOKEN"
+
+
+def _resolve_bridge_token(token: Optional[str]) -> Optional[str]:
+    """Prefer an explicit ``--token``; else fall back to ``KANNAKA_SSH_BRIDGE_TOKEN``.
+
+    An explicit token always wins (the qBraid-generated ProxyCommand relies on
+    it). The env path exists so a direct invocation can avoid putting the secret
+    on the command line.
+    """
+    if token:
+        return token
+    env = os.environ.get(_TOKEN_ENV)
+    return env.strip() if env else None
 
 
 async def _bridge(url: str, token: Optional[str], ping_interval: float) -> None:
@@ -67,6 +87,7 @@ async def _bridge(url: str, token: Optional[str], ping_interval: float) -> None:
 
 def run_ssh_bridge(url: str, token: Optional[str] = None, ping_interval: float = 30.0) -> int:
     """Entry point for the ``ssh-bridge`` CLI subcommand (raw stdio, no JSON)."""
+    token = _resolve_bridge_token(token)
     try:
         asyncio.run(_bridge(url, token, ping_interval))
         return 0

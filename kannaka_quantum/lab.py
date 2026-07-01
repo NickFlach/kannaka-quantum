@@ -633,6 +633,18 @@ def lab_agent_send(ssh_alias: str, session_id: str, text: str) -> dict[str, Any]
     return {"ssh_alias": ssh_alias, "session_id": session_id, "sent": bool(ok)}
 
 
+def _known_hosts_path() -> str:
+    """A persistent known_hosts under the kannaka data dir, for host-key pinning
+    of remote instances (see :func:`_remote_ssh_py`)."""
+    base = os.environ.get("KANNAKA_DATA_DIR") or str(Path.home() / ".kannaka")
+    d = Path(base)
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except Exception:  # pragma: no cover - falls through to ssh's own error
+        pass
+    return str(d / "known_hosts")
+
+
 def _remote_ssh_py(ssh_alias: str, script: str, stdin: str = "") -> str:
     """Run a Python script on the remote instance over SSH, robustly.
 
@@ -640,10 +652,28 @@ def _remote_ssh_py(ssh_alias: str, script: str, stdin: str = "") -> str:
     ``ssh alias python3 -c <multiline>`` gets re-split by the remote shell.
     Shell-quote the whole ``python3 -c ...`` so it arrives as one argument.
     The script reads any payload (e.g. the API key) from stdin, keeping secrets
-    out of argv / the remote process list."""
+    out of argv / the remote process list.
+
+    Host-key handling: qBraid's generated alias config sets
+    ``StrictHostKeyChecking no`` + ``UserKnownHostsFile /dev/null`` (ephemeral
+    instances), so an instance's host key is never verified. For the one SSH
+    command we fully control we override that to ``accept-new`` against a
+    persistent known_hosts, keyed per-instance via ``HostKeyAlias`` so distinct
+    instances don't collide: the key is pinned on first contact and a *changed*
+    key for the same instance is refused (a swapped-instance / MITM signal).
+    Transport is already TLS-authenticated by the wss:// ProxyCommand tunnel +
+    qBraid token; this is defense-in-depth. See docs/adr-0001-remote-agent-surface.md."""
     remote = "python3 -c " + shlex.quote(script)
     r = subprocess.run(
-        ["ssh", "-o", "BatchMode=yes", ssh_alias, remote],
+        [
+            "ssh",
+            "-o", "BatchMode=yes",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", f"UserKnownHostsFile={_known_hosts_path()}",
+            "-o", f"HostKeyAlias={ssh_alias}",
+            ssh_alias,
+            remote,
+        ],
         input=stdin, capture_output=True, text=True, timeout=90,
     )
     out = (r.stdout or "").strip()

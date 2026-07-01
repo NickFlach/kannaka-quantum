@@ -43,11 +43,12 @@ def main():
     print(f'query: "{query}"\nfetching resonant memories from the HRM…\n')
     amps, labels = fetch_memories(query)
     if not amps:
-        print("no memories returned"); return
+        print("no memories returned")
+        return
 
     print("candidate memories (classical resonance):")
-    for a, l in sorted(zip(amps, labels), reverse=True):
-        print(f"  {a:6.3f}  {l}")
+    for amp, label in sorted(zip(amps, labels), reverse=True):
+        print(f"  {amp:6.3f}  {label}")
 
     print("\nrunning resonance recall on the quantum simulator (amplitude amplification)…")
     res = core.quantum_recall(amps, labels=labels, shots=1024, amplify=True)

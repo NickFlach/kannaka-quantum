@@ -241,6 +241,21 @@ pytest                 # 6 network-free tests (no credentials or backend needed)
 
 The core (`kannaka_quantum/core.py`) is provider-agnostic; `cli.py` and `mcp_server.py` are thin surfaces over it.
 
+## Releasing
+
+This repo doesn't tag releases yet. When it does, pushing a `v*` tag (e.g.
+`v0.2.4`) also **updates the constellation marketplace**: the
+[`notify-marketplace`](.github/workflows/notify-marketplace.yml) workflow sends a
+`plugin-released` dispatch to
+[kannaka-constellation-marketplace](https://github.com/NickFlach/kannaka-constellation-marketplace),
+which opens a PR bumping `kannaka-quantum`'s version in its manifest and README.
+
+Keep `pyproject.toml` and `.claude-plugin/plugin.json` versions in step with the
+tag. The cascade is **dormant until** a `KANNAKA_CASCADE_PAT` secret (a PAT with
+`contents: write` + `pull-requests: write` on the marketplace repo) is added to
+this repo's Actions secrets; until then the workflow just logs a warning and
+no-ops.
+
 ## License
 
 MIT.

@@ -30,6 +30,9 @@ If neither is available, install the package: `pip install kannaka-quantum` (or 
 | `quantum_devices` / `devices [--online]` | List QPUs + simulators across providers (status, qubits, cost). Discover before running. |
 | `run_circuit` / `run` | Execute an **OpenQASM 3** program (`include "stdgates.inc"`; declare `qubit[]`/`bit[]`, apply gates, measure). Returns measurement counts. CLI reads QASM from `--qasm`, `--qasm-file`, or stdin. |
 | `quantum_random` / `qrng` | True quantum random bits from measurement collapse (not a PRNG) — entropy for the medium's irrationality (Ξ) and dream noise. Returns bitstring, integer, and a float in [0,1). |
+| `harvest` | Harvest real-QPU bits into a local entropy reservoir (`~/.kannaka/entropy/`). The free simulator is a PRNG and is refused. Spend-guarded (`--allow-spend`/`--max-credits`). |
+| `qrng-status` | Reservoir level (bits/bytes), last-harvest provenance, and estimated refill cost. |
+| `qrng-draw` | Draw bits from the reservoir — raw, or `--expand` to seed an HMAC-DRBG (NIST SP 800-90A, stdlib) and expand. Every draw chains provenance to a QPU `job_id`; empty reservoir fails loudly. |
 | `resonance_recall` / `recall` | **The showcase.** Amplitude-encode candidate memory resonances into a quantum state and amplitude-amplify toward the strongest — Kannaka's recall, run as interference on a quantum computer. Returns the measured distribution plus quantum vs classical top pick. |
 
 ## CLI examples
@@ -39,6 +42,10 @@ kannaka-quantum devices --online
 kannaka-quantum run --qasm-file bell.qasm --shots 200
 kannaka-quantum qrng --bits 16
 kannaka-quantum recall --amplitudes 0.1,0.9,0.2,0.15 --labels alpha,beta,gamma,delta
+
+kannaka-quantum harvest --allow-spend          # real-QPU bits → entropy reservoir
+kannaka-quantum qrng-status                    # reservoir level + provenance
+kannaka-quantum qrng-draw --bits 256 --expand  # HMAC-DRBG stream, provenance-chained
 ```
 
 Resonance recall output:

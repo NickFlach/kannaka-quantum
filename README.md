@@ -18,6 +18,9 @@ It is a **multi-provider bridge** with **two surfaces over one core**:
 | `quantum_devices` / `devices` | List QPUs + simulators across providers, with status, qubit counts, and cost. |
 | `run_circuit` / `run` | Execute an **OpenQASM 3** circuit on a backend; returns measurement counts. |
 | `quantum_random` / `qrng` | True quantum random bits from measurement collapse (not a PRNG) — a quantum entropy source for the medium's irrationality (Ξ) and dream noise. |
+| `harvest` | Harvest raw bits from a **real** QPU into a local entropy reservoir (the free simulator is a PRNG and is refused). Spend-guarded. |
+| `qrng-status` | Reservoir level, last-harvest provenance, and estimated refill cost. |
+| `qrng-draw` | Draw bits from the reservoir — raw, or (`--expand`) seed a NIST SP 800-90A **HMAC-DRBG** and expand. Every draw carries a provenance chain back to a QPU `job_id`; an empty reservoir fails loudly (no silent PRNG fallback). |
 | `resonance_recall` / `recall` | **The showcase.** Amplitude-encode candidate memory resonances into a quantum state and amplitude-amplify toward the strongest — Kannaka's recall, run as interference on a quantum computer. |
 
 ---
@@ -101,9 +104,18 @@ kannaka-quantum devices --online
 kannaka-quantum run --qasm-file bell.qasm --shots 200
 kannaka-quantum qrng --bits 16
 kannaka-quantum recall --amplitudes 0.1,0.9,0.2,0.15 --labels alpha,beta,gamma,delta
+
+# Entropy reservoir (real-QPU-only) + provenance-tracked DRBG
+kannaka-quantum harvest --allow-spend                       # 2048 bits from a real QPU → reservoir
+kannaka-quantum qrng-status                                 # level, provenance, refill cost
+kannaka-quantum qrng-draw --bits 256 --expand               # HMAC-DRBG stream seeded by the reservoir
 ```
 
-`run` reads OpenQASM 3 from `--qasm`, `--qasm-file`, or stdin (`-`). Spend options (`--allow-spend`, `--max-credits`, `--subcategory`) apply to `run`/`qrng`/`recall`.
+`run` reads OpenQASM 3 from `--qasm`, `--qasm-file`, or stdin (`-`). Spend options (`--allow-spend`, `--max-credits`, `--subcategory`) apply to `run`/`qrng`/`recall`/`harvest`.
+
+### Entropy reservoir
+
+`harvest` runs `qrng` against a **real per-shot QPU** (default `openquantum:rigetti:cepheus-1-108q`, ~$0.000255/shot) and appends the raw bits to `~/.kannaka/entropy/reservoir.bin`, with a provenance line (`device`, `job_id`, `n_bits`, `cost_usd`, timestamp) in `reservoir.meta.jsonl`. The free simulator is a PRNG and is refused. `qrng-draw` returns raw reservoir bits, or with `--expand` seeds a NIST SP 800-90A HMAC-DRBG (stdlib only) and expands — every draw records the harvest(s) that seeded it, so the stream chains back to a QPU `job_id`. An empty reservoir fails loudly; there is no silent software-PRNG fallback.
 
 ### Example: resonance recall
 

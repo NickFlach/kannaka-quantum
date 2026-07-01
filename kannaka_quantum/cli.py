@@ -11,6 +11,7 @@ import sys
 from typing import Optional
 
 from . import core
+from . import entropy
 from . import lab
 
 
@@ -86,6 +87,20 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--bits", type=int, default=8)
     g.add_argument("--device", default=core.DEFAULT_DEVICE, help=_DEVICE_HELP)
     _add_spend_opts(g)
+
+    # --- entropy reservoir + DRBG (real-device-only) -----------------------
+    hv = sub.add_parser("harvest", help="harvest real-QPU bits into the entropy reservoir")
+    hv.add_argument("--bits", type=int, default=entropy.DEFAULT_HARVEST_BITS)
+    hv.add_argument("--device", default=entropy.DEFAULT_HARVEST_DEVICE,
+                    help="real per-shot QPU (simulator refused). Default: " + entropy.DEFAULT_HARVEST_DEVICE)
+    _add_spend_opts(hv)
+
+    sub.add_parser("qrng-status", help="entropy reservoir level, provenance, refill cost")
+
+    dw = sub.add_parser("qrng-draw", help="draw bits from the reservoir (raw, or HMAC-DRBG --expand)")
+    dw.add_argument("--bits", type=int, required=True)
+    dw.add_argument("--expand", action="store_true",
+                    help="seed an HMAC-DRBG from reservoir bits and expand (else return raw reservoir bits)")
 
     rc = sub.add_parser("recall", help="resonance recall as amplitude amplification")
     rc.add_argument("--amplitudes", required=True, help="comma-separated or JSON list of resonances")
@@ -326,6 +341,18 @@ def main(argv: Optional[list[str]] = None) -> int:
                 max_credits=args.max_credits,
                 subcategory=args.subcategory,
             )
+        elif args.cmd == "harvest":
+            out = entropy.harvest(
+                args.bits,
+                device=args.device,
+                allow_spend=args.allow_spend,
+                max_credits=args.max_credits,
+                subcategory=args.subcategory,
+            )
+        elif args.cmd == "qrng-status":
+            out = entropy.status()
+        elif args.cmd == "qrng-draw":
+            out = entropy.draw(args.bits, expand=args.expand)
         elif args.cmd == "recall":
             out = core.quantum_recall(
                 _parse_floats(args.amplitudes),

@@ -19,11 +19,13 @@ invoice.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shlex
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional, Sequence, Union
 
@@ -299,6 +301,171 @@ def lab_remove_kernel(environment: str) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
+# Instance leases (T4.1) — extend the per-minute spend doctrine to compute
+# --------------------------------------------------------------------------- #
+# Per-minute instance/server billing is the same hazard class as the per-minute
+# QPUs the circuit bridge refuses outright: a forgotten instance drains the
+# budget silently. Every paid compute start records a *lease* (a max wall-time)
+# in leases.jsonl; ``lab_reap`` stops anything past its lease; and
+# ``lab_agent_launch`` refuses to drive an instance that has no active lease.
+# See docs/adr-0001-remote-agent-surface.md.
+
+#: Default lease wall-time (minutes) for a paid compute action.
+DEFAULT_LEASE_MINUTES = 60
+
+
+def _leases_path() -> Path:
+    base = os.environ.get("KANNAKA_DATA_DIR") or str(Path.home() / ".kannaka")
+    d = Path(base)
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "leases.jsonl"
+
+
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _iso(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_iso(s: str) -> Optional[datetime]:
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except Exception:
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except Exception:
+            return None
+
+
+def _append_lease(record: dict) -> None:
+    rec = {"ts": _iso(_now_utc()), **record}
+    with open(_leases_path(), "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec) + "\n")
+
+
+def _read_leases() -> dict[str, dict]:
+    """Current lease state, folded from the append-only ledger (last write per
+    ``instance_id`` wins, merging fields so a later partial record — e.g. a key
+    fingerprint or a reap — updates without dropping the rest)."""
+    path = _leases_path()
+    if not path.exists():
+        return {}
+    state: dict[str, dict] = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except Exception:
+            continue
+        iid = r.get("instance_id")
+        if not iid:
+            continue
+        state.setdefault(iid, {})
+        state[iid].update(r)
+    return state
+
+
+def _record_lease(
+    instance_id: str,
+    kind: str,
+    *,
+    profile: Optional[str] = None,
+    cluster: Optional[str] = None,
+    ssh_alias: Optional[str] = None,
+    max_minutes: int = DEFAULT_LEASE_MINUTES,
+    event: str = "provision",
+) -> dict:
+    created = _now_utc()
+    minutes = max(1, int(max_minutes))
+    rec = {
+        "instance_id": instance_id,
+        "kind": kind,
+        "profile": profile,
+        "cluster": cluster,
+        "ssh_alias": ssh_alias,
+        "created_at": _iso(created),
+        "max_minutes": minutes,
+        "expires_at": _iso(created + timedelta(minutes=minutes)),
+        "status": "active",
+        "event": event,
+    }
+    _append_lease(rec)
+    return rec
+
+
+def _lease_for_alias(ssh_alias: str) -> Optional[dict]:
+    for r in _read_leases().values():
+        if r.get("ssh_alias") == ssh_alias:
+            return r
+    return None
+
+
+def _key_fingerprint(key: str) -> str:
+    """A short, non-reversible fingerprint of an API key (never the key itself)."""
+    return "sha256:" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+
+
+def lab_reap(dry_run: bool = False, now: Optional[datetime] = None) -> dict[str, Any]:
+    """Stop every leased instance/server whose lease has expired — the
+    cron/systemd-timer-friendly enforcement of :data:`DEFAULT_LEASE_MINUTES`.
+
+    ``dry_run`` reports what would be reaped without stopping anything. Returns
+    the reaped and still-active leases so a timer log is self-explanatory."""
+    from qbraid_core.services.compute import ComputeClient
+
+    now = now or _now_utc()
+    leases = _read_leases()
+    expired = [
+        r for r in leases.values()
+        if r.get("status") == "active" and (_parse_iso(r.get("expires_at", "")) or now) <= now
+    ]
+    client = None if dry_run else _client(ComputeClient)
+    reaped, errors = [], []
+    for r in expired:
+        iid = r["instance_id"]
+        entry = {
+            "instance_id": iid,
+            "kind": r.get("kind"),
+            "expires_at": r.get("expires_at"),
+            "ssh_alias": r.get("ssh_alias"),
+        }
+        if dry_run:
+            reaped.append({**entry, "would_stop": True})
+            continue
+        try:
+            if r.get("kind") == "server":
+                client.stop_server(cluster_id=r.get("cluster"))
+            else:
+                client.stop_bma_instance(iid)
+            _append_lease({"instance_id": iid, "status": "reaped", "reaped_at": _iso(now), "event": "reap"})
+            reaped.append({**entry, "stopped": True})
+        except Exception as e:  # pragma: no cover - live-API variance
+            errors.append({**entry, "error": f"{type(e).__name__}: {e}"})
+    still_active = [
+        {"instance_id": r["instance_id"], "expires_at": r.get("expires_at")}
+        for r in leases.values()
+        if r.get("status") == "active" and r not in expired
+    ]
+    out = {
+        "now": _iso(now),
+        "dry_run": dry_run,
+        "checked": len(leases),
+        "reaped": reaped,
+        "reaped_count": len(reaped),
+        "still_active": still_active,
+    }
+    if errors:
+        out["errors"] = errors
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # Phase 3 — paid compute provisioning (credit-spending; spend-gated)
 # --------------------------------------------------------------------------- #
 def _spend_opt_in(allow_spend: bool, what: str) -> None:
@@ -375,8 +542,10 @@ def lab_compute_up(
     cluster: Optional[str] = None,
     wait: bool = False,
     timeout: Optional[float] = None,
+    max_minutes: int = DEFAULT_LEASE_MINUTES,
 ) -> dict[str, Any]:
-    """Start the Lab server on a compute profile (PAID, per-minute)."""
+    """Start the Lab server on a compute profile (PAID, per-minute). Records a
+    lease so ``lab_reap`` can auto-stop a forgotten server."""
     from qbraid_core.services.compute import ComputeClient
 
     client = _client(ComputeClient)
@@ -384,7 +553,11 @@ def lab_compute_up(
         client, allow_spend, max_credits, profile_slug=profile, what=f"Starting the Lab server on '{profile}'"
     )
     res = client.start_server(profile, cluster_id=cluster)
-    out = {"started": True, "profile": profile, "spend_guard": guard, "result": _dump(res)}
+    lease = _record_lease(
+        f"server:{cluster or 'default'}", "server", profile=profile, cluster=cluster,
+        max_minutes=max_minutes, event="compute_up",
+    )
+    out = {"started": True, "profile": profile, "spend_guard": guard, "lease": lease, "result": _dump(res)}
     if wait:
         # The server is already STARTED and billing; a wait failure must NOT
         # discard that fact (else the caller never learns to stop it).
@@ -415,8 +588,12 @@ def lab_provision_instance(
     max_credits: Optional[float] = None,
     wait: bool = False,
     timeout: Optional[float] = None,
+    max_minutes: int = DEFAULT_LEASE_MINUTES,
 ) -> dict[str, Any]:
-    """Provision (launch) a new on-demand compute instance (PAID, per-minute)."""
+    """Provision (launch) a new on-demand compute instance (PAID, per-minute).
+
+    Records a lease (default 60 min wall-time) so ``lab_reap`` can auto-stop a
+    forgotten instance and ``lab_agent_launch`` will target it."""
     from qbraid_core.services.compute import ComputeClient
 
     client = _client(ComputeClient)
@@ -425,11 +602,21 @@ def lab_provision_instance(
     )
     inst = client.provision_bma_instance(profile)
     instance_id = getattr(inst, "instance_id", None)
+    lease = None
+    if instance_id:
+        try:
+            alias = ComputeClient.bma_ssh_alias(instance_id)
+        except Exception:
+            alias = None
+        lease = _record_lease(
+            instance_id, "instance", profile=profile, ssh_alias=alias, max_minutes=max_minutes, event="provision"
+        )
     out = {
         "provisioned": True,
         "profile": profile,
         "instance_id": instance_id,
         "spend_guard": guard,
+        "lease": lease,
         "instance": _dump(inst),
         # Surface the post-stop disk floor at PROVISION time (not just at stop):
         # the approving human should see that pausing still bills for disk.
@@ -456,8 +643,10 @@ def lab_start_instance(
     instance_id: str,
     allow_spend: bool = False,
     max_credits: Optional[float] = None,
+    max_minutes: int = DEFAULT_LEASE_MINUTES,
 ) -> dict[str, Any]:
-    """Resume a stopped on-demand instance (PAID, per-minute)."""
+    """Resume a stopped on-demand instance (PAID, per-minute). Refreshes the
+    instance's lease — resuming restarts per-minute billing."""
     from qbraid_core.services.compute import ComputeClient
 
     client = _client(ComputeClient)
@@ -471,7 +660,12 @@ def lab_start_instance(
         client, allow_spend, max_credits, rate=rate, what=f"Resuming instance '{instance_id}'"
     )
     inst = client.start_bma_instance(instance_id)
-    return {"started": True, "instance_id": instance_id, "spend_guard": guard, "instance": _dump(inst)}
+    try:
+        alias = ComputeClient.bma_ssh_alias(instance_id)
+    except Exception:
+        alias = None
+    lease = _record_lease(instance_id, "instance", ssh_alias=alias, max_minutes=max_minutes, event="start")
+    return {"started": True, "instance_id": instance_id, "spend_guard": guard, "lease": lease, "instance": _dump(inst)}
 
 
 def lab_stop_instance(instance_id: str) -> dict[str, Any]:
@@ -596,10 +790,23 @@ def lab_agent_launch(
     name: Optional[str] = None,
     agent_type: Optional[str] = None,
     tags: Optional[Sequence[str]] = None,
+    allow_unleased: bool = False,
 ) -> dict[str, Any]:
     """Launch a coding agent (claude / codex / opencode) ON a remote provisioned
     instance over SSH — the kannaka agent driving another agent on cloud compute.
-    Requires SSH already configured (lab_ssh_configure) and the instance running."""
+    Requires SSH already configured (lab_ssh_configure) and the instance running.
+
+    GATE (T4.1): refuses an instance with no active lease — an unleased instance
+    is one nothing will auto-stop, exactly the runaway-billing hazard leases
+    exist to close. Provision via ``lab_provision_instance`` (which records a
+    lease), or pass ``allow_unleased=True`` to override deliberately."""
+    lease = _lease_for_alias(ssh_alias)
+    if not allow_unleased and (lease is None or lease.get("status") != "active"):
+        raise RuntimeError(
+            f"refusing to launch on '{ssh_alias}': no active lease. Per-minute instances must be "
+            "leased so lab_reap can auto-stop them. Provision via lab_provision_instance (records a "
+            "lease), or re-run with allow_unleased=True (CLI: --allow-unleased) to override."
+        )
     s = _agent_launcher().remote_launch(
         ssh_alias,
         tool,
@@ -737,13 +944,21 @@ def lab_agent_setup(
     provider: str = "anthropic",
     model: str = "claude-sonnet-4-6",
     api_key: Optional[str] = None,
+    i_know: bool = False,
 ) -> dict[str, Any]:
     """Prepare a remote instance so a launched claude agent runs AUTONOMOUSLY:
     inject the Anthropic API key (via Claude Code's ``apiKeyHelper``), pre-accept
     onboarding, and pin a valid model. Resolves the key from ``api_key`` → env →
     ``~/.kannaka/config.toml``. NOTE: this uploads the API key to the instance
     (stored 0600 in ~/.claude). Run after lab_ssh_configure, before
-    lab_agent_launch."""
+    lab_agent_launch.
+
+    Blast-radius guard (T4.2): the uploaded key on a bypass-permissions remote
+    agent is the fleet's largest blast radius (ADR-0001). This refuses a key
+    identical to your primary ``ANTHROPIC_API_KEY`` unless ``i_know=True`` —
+    upload a scoped, per-instance key instead. The key's fingerprint (never the
+    key) is recorded against the instance's lease, and ``lab_agent_teardown``
+    removes it when done."""
     provider = (provider or "anthropic").lower()
     if provider not in ("anthropic", "claude"):
         raise RuntimeError(
@@ -755,13 +970,75 @@ def lab_agent_setup(
             "no Anthropic API key found — pass api_key, set ANTHROPIC_API_KEY, or "
             "configure ~/.kannaka/config.toml [llm]."
         )
+    primary = os.environ.get("ANTHROPIC_API_KEY")
+    if primary and key.strip() == primary.strip() and not i_know:
+        raise RuntimeError(
+            "refusing to upload your PRIMARY ANTHROPIC_API_KEY to a remote instance — a "
+            "prompt-injected or compromised bypass-permissions agent there would hold your full-access "
+            "key (ADR-0001's largest blast radius). Mint a scoped, per-instance key (Admin API "
+            "workspace key — see docs/adr-0001-remote-agent-surface.md) and pass it as api_key, or "
+            "re-run with i_know=True (CLI: --i-know) to override deliberately."
+        )
     remote = _remote_ssh_py(ssh_alias, _AGENT_SETUP_SCRIPT, stdin=json.dumps({"key": key, "model": model}))
+    fingerprint = _key_fingerprint(key)
+    lease = _lease_for_alias(ssh_alias)
+    lease_id = lease["instance_id"] if lease else ssh_alias
+    _append_lease(
+        {"instance_id": lease_id, "ssh_alias": ssh_alias, "key_fingerprint": fingerprint,
+         "key_set_at": _iso(_now_utc()), "event": "key_setup"}
+    )
     return {
         "ssh_alias": ssh_alias,
         "provider": "anthropic",
         "model": model,
         "configured": True,
+        "key_fingerprint": fingerprint,
         "remote": remote,
-        "note": "API key uploaded to the instance (~/.claude, 0600). Now lab_agent_launch, then drive with "
-        "lab_agent_send — qBraid's launch --instructions does not auto-submit, so send the task explicitly.",
+        "note": "Scoped API key uploaded to the instance (~/.claude, 0600); fingerprint recorded in the "
+        "lease. Now lab_agent_launch, then drive with lab_agent_send. Run lab_agent_teardown when done "
+        "to delete the remote key.",
+    }
+
+
+#: Remote teardown script — remove the uploaded key file + scrub the apiKeyHelper
+#: reference so a torn-down instance can't keep authenticating. Prints what it removed.
+_AGENT_TEARDOWN_SCRIPT = r'''
+import json, pathlib
+home = pathlib.Path.home()
+removed = []
+kf = home / ".claude" / "anthropic_key"
+if kf.exists():
+    kf.unlink(); removed.append(str(kf))
+sf = home / ".claude" / "settings.json"
+try:
+    s = json.loads(sf.read_text())
+    if "apiKeyHelper" in s:
+        del s["apiKeyHelper"]; sf.write_text(json.dumps(s, indent=2)); removed.append("apiKeyHelper")
+except Exception:
+    pass
+print(json.dumps({"removed": removed}))
+'''
+
+
+def lab_agent_teardown(ssh_alias: str) -> dict[str, Any]:
+    """Delete the uploaded Anthropic key from a remote instance and print a
+    rotation reminder (T4.2). Run when done with a remote agent — the key lived
+    on third-party compute, so rotating it after teardown is the safe default."""
+    remote = _remote_ssh_py(ssh_alias, _AGENT_TEARDOWN_SCRIPT)
+    lease = _lease_for_alias(ssh_alias)
+    fingerprint = lease.get("key_fingerprint") if lease else None
+    if lease:
+        _append_lease(
+            {"instance_id": lease["instance_id"], "ssh_alias": ssh_alias,
+             "key_fingerprint": None, "key_torn_down_at": _iso(_now_utc()), "event": "key_teardown"}
+        )
+    return {
+        "ssh_alias": ssh_alias,
+        "torn_down": True,
+        "removed_key_fingerprint": fingerprint,
+        "remote": remote,
+        "rotation_reminder": (
+            "ROTATE this key now: it resided on a third-party instance. If it was a scoped Admin-API "
+            "workspace key, revoke it in the Anthropic console; if it was a broader key, rotate it."
+        ),
     }

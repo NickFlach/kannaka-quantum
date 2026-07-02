@@ -90,3 +90,64 @@ def test_resolve_provider_key_prefers_env(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-oai-env")
     assert lab._resolve_provider_key("anthropic") == "sk-ant-env"
     assert lab._resolve_provider_key("openai") == "sk-oai-env"
+
+
+# ── T4.2: scoped per-instance keys — blast-radius mitigation (ADR-0001) ──────
+
+
+def _fake_remote(store):
+    def f(ssh_alias, script, stdin=""):
+        store.update(alias=ssh_alias, script=script, stdin=stdin)
+        return '{"removed": ["/home/u/.claude/anthropic_key"]}'
+    return f
+
+
+def test_agent_setup_refuses_primary_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("KANNAKA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-PRIMARY")
+    store = {}
+    monkeypatch.setattr(lab, "_remote_ssh_py", _fake_remote(store))
+    with pytest.raises(RuntimeError, match="PRIMARY"):
+        lab.lab_agent_setup("alias-x", api_key="sk-ant-PRIMARY")
+    assert store == {}  # refused before any remote upload
+
+
+def test_agent_setup_primary_key_override_i_know(tmp_path, monkeypatch):
+    monkeypatch.setenv("KANNAKA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-PRIMARY")
+    store = {}
+    monkeypatch.setattr(lab, "_remote_ssh_py", _fake_remote(store))
+    out = lab.lab_agent_setup("alias-x", api_key="sk-ant-PRIMARY", i_know=True)
+    assert out["configured"] is True
+    assert "sk-ant-PRIMARY" in store["stdin"]  # delivered via stdin, not argv
+    assert out["key_fingerprint"].startswith("sha256:")
+
+
+def test_agent_setup_scoped_key_records_fingerprint_never_raw(tmp_path, monkeypatch):
+    monkeypatch.setenv("KANNAKA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-PRIMARY")
+    store = {}
+    monkeypatch.setattr(lab, "_remote_ssh_py", _fake_remote(store))
+    secret = "sk-ant-SCOPED-per-instance-XYZ"
+    out = lab.lab_agent_setup("alias-x", api_key=secret)
+    fp = lab._key_fingerprint(secret)
+    assert out["key_fingerprint"] == fp
+    leases_text = lab._leases_path().read_text()
+    assert fp in leases_text          # fingerprint recorded against the instance
+    assert secret not in leases_text  # the raw key is NEVER persisted
+
+
+def test_agent_teardown_removes_remote_key_and_reminds(tmp_path, monkeypatch):
+    monkeypatch.setenv("KANNAKA_DATA_DIR", str(tmp_path))
+    lab._append_lease({"instance_id": "i-1", "ssh_alias": "alias-x", "status": "active",
+                       "expires_at": "2999-01-01T00:00:00Z", "key_fingerprint": "sha256:deadbeef0000",
+                       "event": "provision"})
+    store = {}
+    monkeypatch.setattr(lab, "_remote_ssh_py", _fake_remote(store))
+    out = lab.lab_agent_teardown("alias-x")
+    assert out["torn_down"] is True
+    assert out["removed_key_fingerprint"] == "sha256:deadbeef0000"
+    assert "rotate" in out["rotation_reminder"].lower()
+    assert "anthropic_key" in store["script"]  # the teardown script targets the key file
+    # Fingerprint cleared from the lease after teardown.
+    assert lab._read_leases()["i-1"]["key_fingerprint"] is None

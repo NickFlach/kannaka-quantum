@@ -204,6 +204,7 @@ def build_parser() -> argparse.ArgumentParser:
     up.add_argument("--cluster", default=None)
     up.add_argument("--wait", action="store_true")
     up.add_argument("--timeout", type=float, default=None)
+    up.add_argument("--max-minutes", type=int, default=lab.DEFAULT_LEASE_MINUTES, help="lease wall-time before lab-reap stops it")
     _add_lab_spend_opts(up)
 
     dn = sub.add_parser("lab-compute-down", help="stop the Lab server (preserves disk)")
@@ -213,14 +214,19 @@ def build_parser() -> argparse.ArgumentParser:
     pv.add_argument("--profile", required=True)
     pv.add_argument("--wait", action="store_true")
     pv.add_argument("--timeout", type=float, default=None)
+    pv.add_argument("--max-minutes", type=int, default=lab.DEFAULT_LEASE_MINUTES, help="lease wall-time before lab-reap stops it")
     _add_lab_spend_opts(pv)
 
     si = sub.add_parser("lab-start-instance", help="resume a stopped instance (PAID)")
     si.add_argument("--instance-id", required=True)
+    si.add_argument("--max-minutes", type=int, default=lab.DEFAULT_LEASE_MINUTES, help="lease wall-time before lab-reap stops it")
     _add_lab_spend_opts(si)
 
     sp = sub.add_parser("lab-stop-instance", help="stop (pause) an instance (preserves disk)")
     sp.add_argument("--instance-id", required=True)
+
+    rp = sub.add_parser("lab-reap", help="stop instances/servers past their lease (cron/timer-friendly)")
+    rp.add_argument("--dry-run", action="store_true", help="report what would be stopped without stopping")
 
     # --- remote agents (run a coding agent on a provisioned instance) -------
     sc = sub.add_parser("lab-ssh-configure", help="configure SSH to an instance, return its alias")
@@ -234,6 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
     al.add_argument("--name", default=None)
     al.add_argument("--agent-type", default=None)
     al.add_argument("--tags", default=None, help="JSON list or CSV")
+    al.add_argument("--allow-unleased", action="store_true", help="override the lease GATE (launch on an unleased instance)")
 
     aL = sub.add_parser("lab-agent-list", help="list remote agents on an instance")
     aL.add_argument("--ssh-alias", required=True)
@@ -254,6 +261,10 @@ def build_parser() -> argparse.ArgumentParser:
     aset.add_argument("--provider", default="anthropic")
     aset.add_argument("--model", default="claude-sonnet-4-6")
     aset.add_argument("--api-key", default=None)
+    aset.add_argument("--i-know", action="store_true", help="override the same-as-primary-key refusal (upload your primary ANTHROPIC_API_KEY)")
+
+    atd = sub.add_parser("lab-agent-teardown", help="delete the uploaded key from a remote instance + rotation reminder")
+    atd.add_argument("--ssh-alias", required=True)
 
     sb = sub.add_parser("ssh-bridge", help="Windows-safe websocket<->stdio SSH ProxyCommand shim")
     sb.add_argument("url")
@@ -312,19 +323,23 @@ def _dispatch_lab(args) -> Optional[dict]:
     if cmd == "lab-compute-up":
         return lab.lab_compute_up(
             args.profile, allow_spend=args.allow_spend, max_credits=args.max_credits,
-            cluster=args.cluster, wait=args.wait, timeout=args.timeout,
+            cluster=args.cluster, wait=args.wait, timeout=args.timeout, max_minutes=args.max_minutes,
         )
     if cmd == "lab-compute-down":
         return lab.lab_compute_down(cluster=args.cluster)
     if cmd == "lab-provision-instance":
         return lab.lab_provision_instance(
             args.profile, allow_spend=args.allow_spend, max_credits=args.max_credits,
-            wait=args.wait, timeout=args.timeout,
+            wait=args.wait, timeout=args.timeout, max_minutes=args.max_minutes,
         )
     if cmd == "lab-start-instance":
-        return lab.lab_start_instance(args.instance_id, allow_spend=args.allow_spend, max_credits=args.max_credits)
+        return lab.lab_start_instance(
+            args.instance_id, allow_spend=args.allow_spend, max_credits=args.max_credits, max_minutes=args.max_minutes,
+        )
     if cmd == "lab-stop-instance":
         return lab.lab_stop_instance(args.instance_id)
+    if cmd == "lab-reap":
+        return lab.lab_reap(dry_run=args.dry_run)
     if cmd == "lab-ssh-configure":
         return lab.lab_ssh_configure(args.instance_id)
     if cmd == "lab-agent-launch":
@@ -336,6 +351,7 @@ def _dispatch_lab(args) -> Optional[dict]:
             name=args.name,
             agent_type=args.agent_type,
             tags=_parse_json_arg(args.tags),
+            allow_unleased=args.allow_unleased,
         )
     if cmd == "lab-agent-list":
         return lab.lab_agent_list(args.ssh_alias, include_stopped=args.include_stopped)
@@ -344,7 +360,11 @@ def _dispatch_lab(args) -> Optional[dict]:
     if cmd == "lab-agent-send":
         return lab.lab_agent_send(args.ssh_alias, args.session_id, args.text)
     if cmd == "lab-agent-setup":
-        return lab.lab_agent_setup(args.ssh_alias, provider=args.provider, model=args.model, api_key=args.api_key)
+        return lab.lab_agent_setup(
+            args.ssh_alias, provider=args.provider, model=args.model, api_key=args.api_key, i_know=args.i_know,
+        )
+    if cmd == "lab-agent-teardown":
+        return lab.lab_agent_teardown(args.ssh_alias)
     return None
 
 

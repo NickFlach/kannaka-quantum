@@ -133,3 +133,69 @@ host-key verification.
 - Residual accepted risk: the qBraid-generated ProxyCommand token in argv/config
   (bounded by ACLs), and qBraid's internal AgentLauncher SSH calls not pinning
   host keys (bounded by the TLS tunnel).
+
+---
+
+## Amendment — Wave 2 (2026-07-02): instance leases (T4.1) + scoped keys (T4.2)
+
+Wave 2 implements two mitigations this ADR called for. Both live in `lab.py`.
+
+### T4.1 — Instance leases (runaway-billing GATE)
+
+Per-minute instance/server billing is the same hazard class as the per-minute
+QPUs the circuit bridge refuses outright: a forgotten instance drains the budget
+silently. The lease mechanism extends the spend-safety doctrine to compute.
+
+- **Lease ledger** — `<KANNAKA_DATA_DIR or ~/.kannaka>/leases.jsonl`, append-only
+  JSONL. Current state is the merge-fold of records per `instance_id` (last write
+  per field wins), so a later partial record — a reap, a key fingerprint — updates
+  without dropping the rest. A lease record: `instance_id`, `kind`
+  (`"instance"`|`"server"`), `profile`, `cluster`, `ssh_alias`, `created_at`,
+  `max_minutes` (default **60**), `expires_at`, `status`
+  (`"active"`|`"reaped"`), `event`, and (after key setup) `key_fingerprint`.
+- **Recorded on every paid start** — `lab_provision_instance`, `lab_compute_up`,
+  and `lab_start_instance` write a lease (`--max-minutes` overrides the 60-min
+  default).
+- **`lab-reap`** (cron/systemd-timer friendly) stops anything past its
+  `expires_at`: `stop_bma_instance` for instances, `stop_server` for the Lab
+  server; then appends a `status: "reaped"` record. `--dry-run` reports without
+  stopping.
+- **Launch GATE** — `lab_agent_launch` refuses an `ssh_alias` with no *active*
+  lease (`allow_unleased=True` / `--allow-unleased` is the deliberate override).
+  An unleased instance is precisely one nothing will auto-stop.
+- **Live-verification note:** reap's stop path is unit-tested against a mocked
+  compute client (expired lease ⇒ `stop_*` called; fresh lease untouched; server
+  vs instance branch). Verifying against a *real* expired instance is deferred to
+  the first T4.3 lifecycle (which provisions under its own budget) — we do not
+  provision a paid instance solely to kill it.
+
+### T4.2 — Scoped per-instance Anthropic keys
+
+The uploaded key on a bypass-permissions remote agent is this ADR's largest
+blast radius. Mitigations:
+
+- **Same-as-primary refusal** — `lab_agent_setup` refuses a key identical to the
+  operator's primary `ANTHROPIC_API_KEY` unless `i_know=True` / `--i-know`. The
+  default path forces a *scoped* key onto third-party compute.
+- **Fingerprint, never the key** — the uploaded key's `sha256:<12 hex>`
+  fingerprint is recorded against the instance's lease; the raw key is never
+  written to local disk (only uploaded to the instance over stdin, 0600).
+- **`lab-agent-teardown`** deletes the remote key file (`~/.claude/anthropic_key`)
+  and scrubs the `apiKeyHelper` reference, clears the lease fingerprint, and
+  prints a rotation reminder.
+- **Recommended issuance path — Admin-API workspace keys.** For per-instance
+  keys, mint a **workspace-scoped** key via the Anthropic **Admin API**
+  (`/v1/organizations/api_keys`, an `sk-ant-admin…` admin key creates keys bound
+  to a dedicated workspace) rather than reusing an operator key. A workspace key
+  can be revoked and budget-capped independently, so teardown + revoke bounds the
+  blast radius to that one instance's workspace. Treat every uploaded key as
+  compromised on teardown and revoke/rotate it.
+
+### Residual (Wave 2)
+
+- Leasing is advisory local bookkeeping: an instance provisioned outside this
+  tool has no lease, so `lab-reap` won't see it and `lab_agent_launch` refuses it
+  (override with `--allow-unleased`). `lab-reap` must be scheduled (cron/timer) to
+  enforce leases — it is not a daemon.
+- Key teardown removes the on-instance material but cannot itself revoke the key
+  upstream; revocation/rotation remains an operator step (hence the reminder).

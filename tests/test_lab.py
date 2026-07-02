@@ -97,3 +97,135 @@ def test_spend_guard_env_opt_in(monkeypatch):
     g = lab._compute_spend_guard(_FakeClient(1000), allow_spend=False, max_credits=20, rate=2.0)
     assert g["credits_per_min"] == 2.0
     assert g["runway_minutes"] == 10.0
+
+
+# ── T4.1: instance leases + reap + unleased-launch refusal ──────────────────
+
+
+@pytest.fixture
+def _isolated_leases(tmp_path, monkeypatch):
+    monkeypatch.setenv("KANNAKA_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("KANNAKA_LAB_ALLOW_SPEND", raising=False)
+    return tmp_path
+
+
+class _FakeComputeClient:
+    def __init__(self):
+        self.stopped_instances = []
+        self.stopped_servers = []
+
+    def user_credits_value(self):
+        return 1000.0
+
+    def get_profile(self, slug):
+        return _FakeProfile()
+
+    def provision_bma_instance(self, profile):
+        class _Inst:
+            instance_id = "i-abc123"
+            stopped_credits_per_min = 0.1
+        return _Inst()
+
+    def stop_bma_instance(self, instance_id):
+        self.stopped_instances.append(instance_id)
+        return {"stopped": instance_id}
+
+    def stop_server(self, cluster_id=None):
+        self.stopped_servers.append(cluster_id)
+        return {"stopped_server": cluster_id}
+
+
+def test_provision_records_lease(_isolated_leases, monkeypatch):
+    from qbraid_core.services.compute import ComputeClient
+
+    fake = _FakeComputeClient()
+    monkeypatch.setattr(lab, "_client", lambda cls: fake)
+    monkeypatch.setattr(ComputeClient, "bma_ssh_alias", staticmethod(lambda iid: f"alias-{iid}"))
+
+    out = lab.lab_provision_instance("gpu-x", allow_spend=True, max_minutes=30)
+    lease = out["lease"]
+    assert lease["instance_id"] == "i-abc123"
+    assert lease["kind"] == "instance"
+    assert lease["max_minutes"] == 30
+    assert lease["ssh_alias"] == "alias-i-abc123"
+    assert lease["status"] == "active"
+    # Persisted and readable back.
+    assert lab._read_leases()["i-abc123"]["status"] == "active"
+
+
+def test_reap_stops_expired_not_fresh(_isolated_leases, monkeypatch):
+    fake = _FakeComputeClient()
+    monkeypatch.setattr(lab, "_client", lambda cls: fake)
+    lab._append_lease({"instance_id": "i-exp", "kind": "instance", "ssh_alias": "a-exp",
+                       "status": "active", "expires_at": "2000-01-01T00:00:00Z", "event": "provision"})
+    lab._append_lease({"instance_id": "i-fresh", "kind": "instance", "ssh_alias": "a-fresh",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+
+    out = lab.lab_reap()
+    assert fake.stopped_instances == ["i-exp"]
+    assert out["reaped_count"] == 1
+    leases = lab._read_leases()
+    assert leases["i-exp"]["status"] == "reaped"
+    assert leases["i-fresh"]["status"] == "active"
+
+
+def test_reap_stops_expired_server(_isolated_leases, monkeypatch):
+    fake = _FakeComputeClient()
+    monkeypatch.setattr(lab, "_client", lambda cls: fake)
+    lab._append_lease({"instance_id": "server:default", "kind": "server", "cluster": None,
+                       "status": "active", "expires_at": "2000-01-01T00:00:00Z", "event": "compute_up"})
+
+    lab.lab_reap()
+    assert fake.stopped_servers == [None]
+    assert lab._read_leases()["server:default"]["status"] == "reaped"
+
+
+def test_reap_dry_run_stops_nothing(_isolated_leases, monkeypatch):
+    # dry-run must not even construct a client.
+    monkeypatch.setattr(lab, "_client", lambda cls: (_ for _ in ()).throw(AssertionError("client built in dry-run")))
+    lab._append_lease({"instance_id": "i-exp", "kind": "instance", "status": "active",
+                       "expires_at": "2000-01-01T00:00:00Z", "event": "provision"})
+    out = lab.lab_reap(dry_run=True)
+    assert out["reaped_count"] == 1
+    assert out["reaped"][0]["would_stop"] is True
+    assert lab._read_leases()["i-exp"]["status"] == "active"  # untouched
+
+
+class _FakeLauncher:
+    def __init__(self):
+        self.launched = []
+
+    def remote_launch(self, ssh_alias, tool, **kw):
+        self.launched.append(ssh_alias)
+
+        class _S:
+            session_id = "sess-1"
+            tool = "claude"
+            status = "running"
+        return _S()
+
+
+def test_agent_launch_refuses_unleased(_isolated_leases, monkeypatch):
+    launcher = _FakeLauncher()
+    monkeypatch.setattr(lab, "_agent_launcher", lambda: launcher)
+    with pytest.raises(RuntimeError, match="no active lease"):
+        lab.lab_agent_launch("alias-unleased")
+    assert launcher.launched == []  # never reached the launcher
+
+
+def test_agent_launch_allows_leased(_isolated_leases, monkeypatch):
+    launcher = _FakeLauncher()
+    monkeypatch.setattr(lab, "_agent_launcher", lambda: launcher)
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-leased",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    out = lab.lab_agent_launch("alias-leased")
+    assert out["launched"] is True
+    assert launcher.launched == ["alias-leased"]
+
+
+def test_agent_launch_allow_unleased_override(_isolated_leases, monkeypatch):
+    launcher = _FakeLauncher()
+    monkeypatch.setattr(lab, "_agent_launcher", lambda: launcher)
+    out = lab.lab_agent_launch("alias-unleased", allow_unleased=True)
+    assert out["launched"] is True
+    assert launcher.launched == ["alias-unleased"]

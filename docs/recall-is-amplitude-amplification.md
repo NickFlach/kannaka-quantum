@@ -168,18 +168,33 @@ of the quarterly ledger.
 ≈ **94.5% fidelity** under real-device noise — the entanglement survives the trip
 to the metal, which is the precondition for recall surviving it too.
 
-**Quarterly recall ledger (T2.3).** The recall correspondence run on real QPUs —
-a small subset of the corpus, executed quarterly with per-run cost logged — lives
-under `bench/results/hw/`, summarized in `bench/LEDGER.md`.
+**Quarterly recall ledger (T2.3) — first run.** The recall correspondence run on
+real QPUs — a budgeted subset of the corpus, executed quarterly with per-run cost
+logged — is now recorded in [`bench/LEDGER.md`](../bench/LEDGER.md) (row 0 = the
+Bell benchmark above; row 1 = this run), full result in
+[`bench/results/hw/rigetti-cepheus-2026-07-01.json`](../bench/results/hw/rigetti-cepheus-2026-07-01.json):
 
-> **TODO-cite (T2.3, in progress).** At the time of writing, the hardware ledger
-> (`bench/LEDGER.md` + `bench/results/hw/`) has not yet been committed — the first
-> quarterly run is being generated. Once it lands, cite the measured hardware
-> agreement rate and cost here; the expectation is agreement below the 100% ideal
-> ceiling but well above chance, degrading gracefully with device noise the same
-> way the Bell state does. This section is the only part of this writeup gated on
-> that data; the simulator correspondence and the derivation above stand on their
-> own.
+| run | device | scenarios × shots | agreement | cost |
+|---|---|---|---|---|
+| ideal sim | `local:statevector` | 50 × 1024 | 100% | $0 |
+| real QPU | `aws:rigetti:qpu:cepheus-1-108q` | 5 × 200 | **40%** (2/5) | **$1.925** |
+
+The gap — 40% on hardware against the 100% ideal ceiling — is the depth/noise story
+made concrete. Each scenario is a 4-qubit circuit (`StatePreparation` of a
+16-amplitude state, then 1–2 amplification iterations), well past what a current
+NISQ device holds coherently, so readout and two-qubit-gate noise de-amplify the
+target on 3 of the 5 scenarios. Crucially **`argmax_mismatches = 0`**: recall's
+classical argmax matched the corpus's recorded argmax on every scenario, so the
+corpus and the classical mapping are intact — the entire gap is device noise, not a
+harness bug. It is the expected contrast with the shallow Bell circuit (94.5%
+fidelity, row 0): the deeper recall circuit degrades further, exactly as depth
+predicts.
+
+This is one datapoint, not a trend — the ledger exists to record hardware closing
+(or not closing) this gap across successive quarterly runs. A full 50-scenario
+hardware run is queued for a per-shot-billed backend (no per-task fee) once that
+account is funded. The simulator correspondence and the derivation above stand
+independently of it.
 
 ---
 

@@ -237,7 +237,18 @@ def build_parser() -> argparse.ArgumentParser:
     tp.add_argument("--instance-id", required=True)
 
     rp = sub.add_parser("lab-reap", help="stop instances/servers past their lease (cron/timer-friendly)")
-    rp.add_argument("--dry-run", action="store_true", help="report what would be stopped without stopping")
+    rp.add_argument("--dry-run", action="store_true", help="report what would be stopped/terminated without doing it")
+    rp.add_argument(
+        "--terminate-stopped", action="store_true",
+        help="DESTRUCTIVE: also TERMINATE (delete disk, stop ALL billing) instances stopped past their lease + "
+        "grace. A stopped instance keeps billing stopped_credits_per_min for its disk; this frees it but DESTROYS "
+        "the disk. Default off; also enabled by KANNAKA_REAP_TERMINATE=1.",
+    )
+    rp.add_argument(
+        "--terminate-grace-minutes", type=int, default=None,
+        help="only terminate instances stopped past lease by this margin (default 360 = 6h; env "
+        "KANNAKA_REAP_TERMINATE_GRACE_MIN)",
+    )
 
     # --- remote agents (run a coding agent on a provisioned instance) -------
     sc = sub.add_parser("lab-ssh-configure", help="configure SSH to an instance, return its alias")
@@ -385,7 +396,11 @@ def _dispatch_lab(args) -> Optional[dict]:
     if cmd == "lab-terminate-instance":
         return lab.lab_terminate_instance(args.instance_id)
     if cmd == "lab-reap":
-        return lab.lab_reap(dry_run=args.dry_run)
+        return lab.lab_reap(
+            dry_run=args.dry_run,
+            terminate_stopped=args.terminate_stopped,
+            terminate_grace_minutes=args.terminate_grace_minutes,
+        )
     if cmd == "lab-ssh-configure":
         return lab.lab_ssh_configure(args.instance_id)
     if cmd == "lab-agent-launch":

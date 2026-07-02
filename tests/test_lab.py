@@ -5,6 +5,7 @@ CLI arg parsing). The live API path is exercised by hand against the account.
 import base64
 import re
 import subprocess
+from datetime import timedelta
 
 import pytest
 
@@ -110,6 +111,8 @@ def test_spend_guard_env_opt_in(monkeypatch):
 def _isolated_leases(tmp_path, monkeypatch):
     monkeypatch.setenv("KANNAKA_DATA_DIR", str(tmp_path))
     monkeypatch.delenv("KANNAKA_LAB_ALLOW_SPEND", raising=False)
+    monkeypatch.delenv("KANNAKA_REAP_TERMINATE", raising=False)
+    monkeypatch.delenv("KANNAKA_REAP_TERMINATE_GRACE_MIN", raising=False)
     return tmp_path
 
 
@@ -235,6 +238,76 @@ def test_stop_instance_marks_lease_stopped(_isolated_leases, monkeypatch):
     # The lease is now closed, so an expiry reap must NOT chase it (no second stop).
     lab.lab_reap()
     assert fake.stopped_instances == ["i-stop"]
+
+
+def test_reap_terminate_stopped_opt_in(_isolated_leases, monkeypatch):
+    # Opt-in: a stopped instance past its lease by more than the grace margin is
+    # TERMINATED (disk freed), so it stops billing stopped_credits_per_min.
+    fake = _FakeComputeClient()
+    monkeypatch.setattr(lab, "_client", lambda cls: fake)
+    lab._append_lease({"instance_id": "i-old", "kind": "instance", "ssh_alias": "a-old",
+                       "status": "stopped", "expires_at": "2000-01-01T00:00:00Z", "event": "stop"})
+
+    out = lab.lab_reap(terminate_stopped=True, terminate_grace_minutes=60)
+    assert out["terminated_count"] == 1
+    assert getattr(fake, "terminated_instances", []) == ["i-old"]
+    assert lab._read_leases()["i-old"]["status"] == "terminated"
+
+
+def test_reap_terminate_default_off_no_disk_destruction(_isolated_leases, monkeypatch):
+    # DEFAULT OFF: without opt-in, a stopped-past-lease instance is left alone —
+    # reap never silently destroys a disk.
+    fake = _FakeComputeClient()
+    monkeypatch.setattr(lab, "_client", lambda cls: fake)
+    lab._append_lease({"instance_id": "i-old", "kind": "instance", "ssh_alias": "a-old",
+                       "status": "stopped", "expires_at": "2000-01-01T00:00:00Z", "event": "stop"})
+
+    out = lab.lab_reap()
+    assert out["terminated_count"] == 0
+    assert getattr(fake, "terminated_instances", []) == []
+    assert lab._read_leases()["i-old"]["status"] == "stopped"
+
+
+def test_reap_terminate_respects_grace(_isolated_leases, monkeypatch):
+    # A stopped instance only just past its lease (within grace) is NOT terminated
+    # even under opt-in — grace protects a just-paused instance.
+    fake = _FakeComputeClient()
+    monkeypatch.setattr(lab, "_client", lambda cls: fake)
+    recent = lab._iso(lab._now_utc() - timedelta(minutes=5))
+    lab._append_lease({"instance_id": "i-recent", "kind": "instance", "ssh_alias": "a-recent",
+                       "status": "stopped", "expires_at": recent, "event": "stop"})
+
+    out = lab.lab_reap(terminate_stopped=True, terminate_grace_minutes=360)
+    assert out["terminated_count"] == 0
+    assert lab._read_leases()["i-recent"]["status"] == "stopped"
+
+
+def test_reap_terminate_dry_run_shows_would_terminate(_isolated_leases, monkeypatch):
+    fake = _FakeComputeClient()
+    monkeypatch.setattr(lab, "_client", lambda cls: fake)
+    lab._append_lease({"instance_id": "i-old", "kind": "instance", "ssh_alias": "a-old",
+                       "status": "stopped", "expires_at": "2000-01-01T00:00:00Z", "event": "stop"})
+
+    out = lab.lab_reap(dry_run=True, terminate_stopped=True, terminate_grace_minutes=60)
+    assert out["terminated"] == [{"instance_id": "i-old", "kind": "instance",
+                                  "expires_at": "2000-01-01T00:00:00Z", "ssh_alias": "a-old",
+                                  "would_terminate": True}]
+    assert getattr(fake, "terminated_instances", []) == []  # nothing actually terminated
+    assert lab._read_leases()["i-old"]["status"] == "stopped"  # untouched
+
+
+def test_reap_terminate_env_opt_in(_isolated_leases, monkeypatch):
+    # KANNAKA_REAP_TERMINATE=1 enables it without the flag (for cron/timer use).
+    fake = _FakeComputeClient()
+    monkeypatch.setattr(lab, "_client", lambda cls: fake)
+    monkeypatch.setenv("KANNAKA_REAP_TERMINATE", "1")
+    monkeypatch.setenv("KANNAKA_REAP_TERMINATE_GRACE_MIN", "60")
+    lab._append_lease({"instance_id": "i-old", "kind": "instance", "ssh_alias": "a-old",
+                       "status": "reaped", "expires_at": "2000-01-01T00:00:00Z", "event": "reap"})
+
+    out = lab.lab_reap()
+    assert out["terminate_stopped"] is True and out["terminated_count"] == 1
+    assert lab._read_leases()["i-old"]["status"] == "terminated"
 
 
 class _FakeLauncher:

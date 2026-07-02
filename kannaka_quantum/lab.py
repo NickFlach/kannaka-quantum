@@ -412,22 +412,62 @@ def _key_fingerprint(key: str) -> str:
     return "sha256:" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
 
 
-def lab_reap(dry_run: bool = False, now: Optional[datetime] = None) -> dict[str, Any]:
+#: Default grace, in minutes, before ``lab_reap`` will TERMINATE a stopped-past-lease
+#: instance under ``terminate_stopped`` — generous (6h) so an intentionally-paused
+#: instance isn't destroyed out from under someone. Override: terminate_grace_minutes
+#: / ``KANNAKA_REAP_TERMINATE_GRACE_MIN``.
+DEFAULT_REAP_TERMINATE_GRACE_MIN = 360
+
+
+def lab_reap(
+    dry_run: bool = False,
+    now: Optional[datetime] = None,
+    terminate_stopped: bool = False,
+    terminate_grace_minutes: Optional[int] = None,
+) -> dict[str, Any]:
     """Stop every leased instance/server whose lease has expired — the
     cron/systemd-timer-friendly enforcement of :data:`DEFAULT_LEASE_MINUTES`.
 
-    ``dry_run`` reports what would be reaped without stopping anything. Returns
-    the reaped and still-active leases so a timer log is self-explanatory."""
+    A *stopped* BMA instance still bills ``stopped_credits_per_min`` for its disk
+    (stop preserves the disk; only terminate frees it). ``terminate_stopped`` (CLI
+    ``--terminate-stopped`` or ``KANNAKA_REAP_TERMINATE=1``, DEFAULT OFF) additionally
+    TERMINATES instances that have been stopped/reaped past their lease by a generous
+    grace margin (``terminate_grace_minutes``, default
+    :data:`DEFAULT_REAP_TERMINATE_GRACE_MIN`) — this DESTROYS the disk to stop all
+    billing, so it is opt-in and grace-gated.
+
+    ``dry_run`` reports what would be stopped (``would_stop``) and, under
+    ``terminate_stopped``, what would be terminated (``would_terminate``) without
+    doing anything. Returns the reaped/terminated/still-active leases so a timer log
+    is self-explanatory."""
     from qbraid_core.services.compute import ComputeClient
 
     now = now or _now_utc()
+    if not terminate_stopped:
+        terminate_stopped = os.environ.get("KANNAKA_REAP_TERMINATE") == "1"
+    if terminate_grace_minutes is None:
+        terminate_grace_minutes = int(
+            os.environ.get("KANNAKA_REAP_TERMINATE_GRACE_MIN", str(DEFAULT_REAP_TERMINATE_GRACE_MIN))
+        )
+    grace = timedelta(minutes=max(0, int(terminate_grace_minutes)))
+
     leases = _read_leases()
     expired = [
         r for r in leases.values()
         if r.get("status") == "active" and (_parse_iso(r.get("expires_at", "")) or now) <= now
     ]
+    # Stopped/reaped BMA instances keep billing disk; terminate them once past lease
+    # by the grace margin (opt-in). Servers are excluded — lab_compute_down is their
+    # teardown and stop_server semantics differ.
+    reclaimable = [
+        r for r in leases.values()
+        if terminate_stopped
+        and r.get("kind") != "server"
+        and r.get("status") in ("stopped", "reaped")
+        and (_parse_iso(r.get("expires_at", "")) or now) + grace <= now
+    ]
     client = None if dry_run else _client(ComputeClient)
-    reaped, errors = [], []
+    reaped, terminated, errors = [], [], []
     for r in expired:
         iid = r["instance_id"]
         entry = {
@@ -448,6 +488,26 @@ def lab_reap(dry_run: bool = False, now: Optional[datetime] = None) -> dict[str,
             reaped.append({**entry, "stopped": True})
         except Exception as e:  # pragma: no cover - live-API variance
             errors.append({**entry, "error": f"{type(e).__name__}: {e}"})
+    for r in reclaimable:
+        iid = r["instance_id"]
+        entry = {
+            "instance_id": iid,
+            "kind": r.get("kind"),
+            "expires_at": r.get("expires_at"),
+            "ssh_alias": r.get("ssh_alias"),
+        }
+        if dry_run:
+            terminated.append({**entry, "would_terminate": True})
+            continue
+        try:
+            client.terminate_bma_instance(iid)
+            _append_lease(
+                {"instance_id": iid, "status": "terminated", "terminated_at": _iso(now),
+                 "event": "terminate", "via": "reap"}
+            )
+            terminated.append({**entry, "terminated": True})
+        except Exception as e:  # pragma: no cover - live-API variance
+            errors.append({**entry, "error": f"{type(e).__name__}: {e}"})
     still_active = [
         {"instance_id": r["instance_id"], "expires_at": r.get("expires_at")}
         for r in leases.values()
@@ -456,9 +516,12 @@ def lab_reap(dry_run: bool = False, now: Optional[datetime] = None) -> dict[str,
     out = {
         "now": _iso(now),
         "dry_run": dry_run,
+        "terminate_stopped": terminate_stopped,
         "checked": len(leases),
         "reaped": reaped,
         "reaped_count": len(reaped),
+        "terminated": terminated,
+        "terminated_count": len(terminated),
         "still_active": still_active,
     }
     if errors:

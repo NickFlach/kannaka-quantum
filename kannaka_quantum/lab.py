@@ -1042,3 +1042,274 @@ def lab_agent_teardown(ssh_alias: str) -> dict[str, Any]:
             "workspace key, revoke it in the Anthropic console; if it was a broader key, rotate it."
         ),
     }
+
+
+# --------------------------------------------------------------------------- #
+# Phase 5 — remote shell + QuantumOS boot
+# --------------------------------------------------------------------------- #
+#: Cap on captured remote stdout/stderr. The Rust bridge drains pipes only
+#: after the child exits, so every subcommand must print one *small* JSON
+#: object — unbounded remote output would risk a pipe-buffer deadlock there.
+EXEC_OUTPUT_CAP = 8000
+
+
+def _remote_ssh_sh(ssh_alias: str, command: str, timeout: int = 90, stdin: str = "") -> subprocess.CompletedProcess:
+    """Run a shell command on the remote instance over SSH.
+
+    Same transport discipline as :func:`_remote_ssh_py` (BatchMode, pinned
+    known_hosts via HostKeyAlias), but the payload is ``bash -lc <command>``
+    shell-quoted as one argument so the remote shell can't re-split it.
+    Returns the raw CompletedProcess — callers decide whether a non-zero rc
+    is an error (a failing command is often a *result*, not a failure)."""
+    remote = "bash -lc " + shlex.quote(command)
+    return subprocess.run(
+        [
+            "ssh",
+            "-o", "BatchMode=yes",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", f"UserKnownHostsFile={_known_hosts_path()}",
+            "-o", f"HostKeyAlias={ssh_alias}",
+            ssh_alias,
+            remote,
+        ],
+        input=stdin, capture_output=True, text=True, timeout=timeout,
+    )
+
+
+def _cap(text: str) -> tuple[str, bool]:
+    """Trim to the LAST ``EXEC_OUTPUT_CAP`` chars (the end of a build/boot log
+    is where the verdict lives)."""
+    t = text or ""
+    if len(t) <= EXEC_OUTPUT_CAP:
+        return t, False
+    return t[-EXEC_OUTPUT_CAP:], True
+
+
+def lab_exec(ssh_alias: str, command: str, timeout_secs: int = 90) -> dict[str, Any]:
+    """Run a shell command on a provisioned instance over its SSH alias and
+    return rc + capped output. Unlike most lab functions a non-zero exit is
+    returned as data (``ok: false``), not raised — the caller usually wants
+    the diagnostics. Costs nothing beyond the instance's own per-minute bill.
+
+    No lease gate: this is an interactive, per-call-approved primitive (the
+    agent harness asks before every un-allowlisted call). Long-lived workloads
+    belong in :func:`lab_qos_boot` / :func:`lab_agent_launch`, which do gate."""
+    if not command.strip():
+        raise RuntimeError("lab_exec: empty command")
+    r = _remote_ssh_sh(ssh_alias, command, timeout=timeout_secs)
+    out, out_trunc = _cap(r.stdout)
+    err, err_trunc = _cap(r.stderr)
+    return {
+        "ssh_alias": ssh_alias,
+        "command": command,
+        "rc": r.returncode,
+        "ok": r.returncode == 0,
+        "stdout": out,
+        "stderr": err,
+        "truncated": out_trunc or err_trunc,
+    }
+
+
+#: Default QuantumOS clone source for lab_qos_boot.
+QOS_DEFAULT_REPO = "https://github.com/flaukowski/QuantumOS.git"
+
+#: Idempotent remote prep: install missing deps, clone-or-update the repo,
+#: build the kernel. Tokens (@REPO@ etc.) are substituted with `.replace`, not
+#: `.format`, because the rootless block needs literal shell ``${...}``.
+#: Kept quiet — only stage markers print, so the bridge's small-JSON contract
+#: holds. Dep strategy, learned live on a real qBraid instance (2026-07-02):
+#: qBraid's image runs as jovyan with NO passwordless sudo but ships
+#: gcc/make/git/tmux — only QEMU is missing, and conda-forge has no
+#: qemu-system for linux-64. So: PATH-visible qemu wins; else sudo apt; else
+#: a fully ROOTLESS install — apt update/download into $HOME state dirs
+#: (no root needed), dpkg -x into ~/.local/qemu-root, a wrapper that sets
+#: LD_LIBRARY_PATH (debs split across usr/lib and lib) + -L firmware dirs,
+#: then an ldd loop that downloads the soname closure (libpmem pulls
+#: libndctl/libdaxctl/libkmod transitively; t64-suffixed names on noble).
+_QOS_PREP_SCRIPT = """
+set -e
+export DEBIAN_FRONTEND=noninteractive
+export PATH="$HOME/.local/bin:$PATH"
+need=""
+command -v qemu-system-x86_64 >/dev/null 2>&1 || need="$need qemu"
+command -v gcc  >/dev/null 2>&1 || need="$need build-essential"
+command -v tmux >/dev/null 2>&1 || need="$need tmux"
+command -v git  >/dev/null 2>&1 || need="$need git"
+if [ -n "$need" ]; then
+  if sudo -n true 2>/dev/null; then
+    echo "[deps] apt installing:$need"
+    pkgs=$(echo "$need" | sed 's/qemu/qemu-system-x86/')
+    sudo apt-get update -qq >/dev/null
+    sudo apt-get install -y -qq $pkgs >/dev/null
+  elif [ "$(echo $need | tr -d ' ')" = "qemu" ]; then
+    echo "[deps] no sudo - rootless QEMU install (apt download + dpkg -x)"
+    R="$HOME/.local/qemu-root"; A="$HOME/apt/cache/archives"
+    mkdir -p "$R" "$HOME/.local/bin" "$HOME/apt/lists/partial" "$A/partial"
+    APTO="-o Dir::State::Lists=$HOME/apt/lists -o Dir::Cache=$HOME/apt/cache -o Debug::NoLocking=1"
+    apt-get update $APTO -qq >/dev/null 2>&1 || true
+    cd "$A"
+    apt-get download $APTO qemu-system-x86 qemu-system-common qemu-system-data seabios libfdt1 libslirp0 libpixman-1-0 >/dev/null
+    for d in "$A"/*.deb; do dpkg -x "$d" "$R"; done
+    printf '%s\\n' '#!/bin/sh' 'R=$HOME/.local/qemu-root' \\
+      'export LD_LIBRARY_PATH="$R/usr/lib/x86_64-linux-gnu:$R/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"' \\
+      'export QEMU_MODULE_DIR="$R/usr/lib/x86_64-linux-gnu/qemu"' \\
+      'exec "$R/usr/bin/qemu-system-x86_64" -L "$R/usr/share/qemu" -L "$R/usr/share/seabios" "$@"' \\
+      > "$HOME/.local/bin/qemu-system-x86_64"
+    chmod +x "$HOME/.local/bin/qemu-system-x86_64"
+    for i in 1 2 3 4 5 6; do
+      missing=$(LD_LIBRARY_PATH="$R/usr/lib/x86_64-linux-gnu:$R/lib/x86_64-linux-gnu" ldd "$R/usr/bin/qemu-system-x86_64" 2>/dev/null | grep 'not found' | awk '{print $1}' | sort -u)
+      [ -z "$missing" ] && break
+      for lib in $missing; do
+        base=$(echo "$lib" | sed 's/\\.so\\..*//; s/_/-/g'); ver=$(echo "$lib" | sed 's/.*\\.so\\.//' | cut -d. -f1)
+        for cand in "${base}${ver}" "${base}${ver}t64" "${base}-${ver}" "$base"; do
+          apt-get download $APTO "$cand" >/dev/null 2>&1 && break
+        done
+      done
+      for d in "$A"/*.deb; do dpkg -x "$d" "$R"; done
+    done
+    qemu-system-x86_64 --version >/dev/null
+    echo "[deps] rootless QEMU ready"
+  else
+    echo "[deps] MISSING:$need and no passwordless sudo on this host" >&2
+    exit 41
+  fi
+fi
+if [ -d "$HOME/QuantumOS/.git" ]; then
+  echo "[repo] updating existing clone"
+  git -C "$HOME/QuantumOS" fetch --quiet origin
+  @REF_CHECKOUT@
+else
+  echo "[repo] cloning @REPO@"
+  git clone --quiet @REPO@ "$HOME/QuantumOS"
+  @REF_CHECKOUT_FRESH@
+fi
+echo "[build] make kernel"
+make -C "$HOME/QuantumOS" kernel >/dev/null
+ls "$HOME"/QuantumOS/build/*/kernel.elf32 >/dev/null
+echo "[build] ok"
+"""
+
+#: Boot inside a detached tmux session so the QEMU serial console outlives
+#: this call and any watcher window. ``exec bash`` keeps the pane alive after
+#: QEMU exits so a crash's last output stays readable. ``-nic none -vga none``
+#: keeps the rootless install's firmware needs down to seabios + the
+#: multiboot/linuxboot option ROMs.
+_QOS_BOOT_SCRIPT = """
+set -e
+export PATH="$HOME/.local/bin:$PATH"
+kernel=$(ls "$HOME"/QuantumOS/build/*/kernel.elf32 | head -1)
+tmux new-session -d -s @SESSION@ \
+  "export PATH=\\"$HOME/.local/bin:$PATH\\"; qemu-system-x86_64 -kernel $kernel -serial stdio -m 128M -display none -vga none -nic none -no-reboot; echo; echo '[qemu exited]'; exec bash"
+sleep @SETTLE@
+tmux capture-pane -p -S -200 -t @SESSION@ | grep -v '^$' | tail -n 40
+"""
+
+
+def _qos_booted(lines: list[str]) -> bool:
+    """A kernel that printed its ready line — or is actively ticking — is up.
+    The ready line can scroll out of even a deep capture once services and
+    user processes start logging, so the tick heartbeat counts too."""
+    return any("QuantumOS ready" in ln or "Timer tick" in ln for ln in lines)
+
+
+def lab_qos_boot(
+    ssh_alias: str,
+    repo: str = QOS_DEFAULT_REPO,
+    ref: Optional[str] = None,
+    session: str = "qos",
+    fresh: bool = False,
+    allow_unleased: bool = False,
+    timeout_secs: int = 540,
+) -> dict[str, Any]:
+    """Boot QuantumOS in QEMU on a provisioned instance, inside a detached
+    tmux session, and return the serial-console tail (the kernel prints
+    "QuantumOS ready" when it reaches the idle loop, then timer ticks).
+
+    Idempotent: deps are installed only if missing, the clone is updated in
+    place, and an already-running session is reported (with its current tail)
+    rather than clobbered — pass ``fresh=True`` to kill it and reboot from a
+    rebuilt kernel. Watch live with lab_watch, or manually:
+    ``ssh -t <alias> tmux attach -t <session>``.
+
+    GATE: same active-lease requirement as lab_agent_launch — this starts a
+    long-lived workload on per-minute compute, exactly what leases exist to
+    bound. Override deliberately with ``allow_unleased=True``."""
+    if not session.replace("-", "").replace("_", "").isalnum():
+        raise RuntimeError(f"lab_qos_boot: invalid tmux session name '{session}'")
+    lease = _lease_for_alias(ssh_alias)
+    if not allow_unleased and (lease is None or lease.get("status") != "active"):
+        raise RuntimeError(
+            f"refusing to boot on '{ssh_alias}': no active lease. Per-minute instances must be "
+            "leased so lab_reap can auto-stop them. Provision via lab_provision_instance (records a "
+            "lease), or re-run with allow_unleased=True (CLI: --allow-unleased) to override."
+        )
+    attach = f"ssh -t {ssh_alias} tmux attach -t {session}"
+
+    # An existing session either satisfies the request (report it) or, with
+    # fresh=True, gets killed before the rebuild.
+    has = _remote_ssh_sh(ssh_alias, f"tmux has-session -t {shlex.quote(session)} 2>/dev/null", timeout=30)
+    if has.returncode == 0:
+        if not fresh:
+            tail = _remote_ssh_sh(
+                ssh_alias,
+                f"tmux capture-pane -p -S -200 -t {shlex.quote(session)} | grep -v '^$' | tail -n 40",
+                timeout=30,
+            )
+            lines = [ln for ln in (tail.stdout or "").splitlines() if ln.strip()]
+            return {
+                "ssh_alias": ssh_alias,
+                "session": session,
+                "already_running": True,
+                "booted": _qos_booted(lines),
+                "tail": lines,
+                "attach": attach,
+                "note": "session already exists — pass fresh=true to rebuild and reboot",
+            }
+        _remote_ssh_sh(ssh_alias, f"tmux kill-session -t {shlex.quote(session)}", timeout=30)
+
+    ref_q = shlex.quote(ref) if ref else ""
+    prep = (
+        _QOS_PREP_SCRIPT.replace("@REPO@", shlex.quote(repo))
+        .replace(
+            "@REF_CHECKOUT@",
+            (
+                # checkout failure must abort (set -e); the ff-merge to the remote
+                # ref is best-effort (sha refs have no origin/<sha> to merge).
+                f'git -C "$HOME/QuantumOS" checkout --quiet {ref_q} && '
+                f'(git -C "$HOME/QuantumOS" merge --ff-only --quiet origin/{ref_q} 2>/dev/null || true)'
+                if ref
+                else 'git -C "$HOME/QuantumOS" pull --ff-only --quiet'
+            ),
+        )
+        .replace(
+            "@REF_CHECKOUT_FRESH@",
+            f'git -C "$HOME/QuantumOS" checkout --quiet {ref_q}' if ref else "true",
+        )
+    )
+    r = _remote_ssh_sh(ssh_alias, prep, timeout=timeout_secs)
+    if r.returncode != 0:
+        err, _ = _cap(r.stderr)
+        out, _ = _cap(r.stdout)
+        raise RuntimeError(f"QuantumOS prep/build failed (rc={r.returncode}): {err or out}"[:1200])
+
+    boot = _QOS_BOOT_SCRIPT.replace("@SESSION@", session).replace("@SETTLE@", "4")
+    b = _remote_ssh_sh(ssh_alias, boot, timeout=60)
+    if b.returncode != 0:
+        err, _ = _cap(b.stderr)
+        raise RuntimeError(f"QuantumOS boot launch failed (rc={b.returncode}): {err}"[:1200])
+    lines = [ln for ln in (b.stdout or "").splitlines() if ln.strip()]
+    booted = _qos_booted(lines)
+    return {
+        "ssh_alias": ssh_alias,
+        "session": session,
+        "already_running": False,
+        "booted": booted,
+        "tail": lines,
+        "attach": attach,
+        "note": (
+            "QuantumOS is up — attach with lab_watch or the attach command"
+            if booted
+            else "boot launched but 'QuantumOS ready' not seen yet — re-check with "
+            f"lab_exec 'tmux capture-pane -p -t {session} | tail -n 25'"
+        ),
+    }

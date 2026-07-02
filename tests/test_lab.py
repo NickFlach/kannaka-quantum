@@ -229,3 +229,123 @@ def test_agent_launch_allow_unleased_override(_isolated_leases, monkeypatch):
     out = lab.lab_agent_launch("alias-unleased", allow_unleased=True)
     assert out["launched"] is True
     assert launcher.launched == ["alias-unleased"]
+
+
+# --------------------------------------------------------------------------- #
+# lab_exec / lab_qos_boot (remote layer stubbed at _remote_ssh_sh)
+# --------------------------------------------------------------------------- #
+class _FakeSh:
+    """Record commands sent through _remote_ssh_sh and script the replies.
+
+    Replies are matched by substring against the remote command; first match
+    wins. Unmatched commands succeed with empty output.
+    """
+
+    def __init__(self, replies=None):
+        self.calls = []
+        self.replies = replies or []
+
+    def __call__(self, ssh_alias, command, timeout=90, stdin=""):
+        import subprocess
+
+        self.calls.append((ssh_alias, command, timeout))
+        for needle, rc, out, err in self.replies:
+            if needle in command:
+                return subprocess.CompletedProcess([], rc, stdout=out, stderr=err)
+        return subprocess.CompletedProcess([], 0, stdout="", stderr="")
+
+
+def test_exec_returns_rc_and_output_without_raising(monkeypatch):
+    sh = _FakeSh([("false-cmd", 1, "partial", "boom")])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_exec("alias-x", "false-cmd --now")
+    assert out["ok"] is False and out["rc"] == 1
+    assert out["stdout"] == "partial" and out["stderr"] == "boom"
+    assert out["truncated"] is False
+    assert sh.calls[0][0] == "alias-x"
+
+
+def test_exec_caps_output_to_tail(monkeypatch):
+    big = "x" * (lab.EXEC_OUTPUT_CAP + 100) + "THE-END"
+    sh = _FakeSh([("big", 0, big, "")])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_exec("alias-x", "big")
+    assert out["truncated"] is True
+    assert out["stdout"].endswith("THE-END")  # tail, not head
+    assert len(out["stdout"]) == lab.EXEC_OUTPUT_CAP
+
+
+def test_exec_refuses_empty_command(monkeypatch):
+    monkeypatch.setattr(lab, "_remote_ssh_sh", _FakeSh())
+    with pytest.raises(RuntimeError, match="empty command"):
+        lab.lab_exec("alias-x", "   ")
+
+
+def test_qos_boot_refuses_unleased(_isolated_leases, monkeypatch):
+    sh = _FakeSh()
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    with pytest.raises(RuntimeError, match="no active lease"):
+        lab.lab_qos_boot("alias-unleased")
+    assert sh.calls == []  # never touched the instance
+
+
+def test_qos_boot_happy_path_reports_ready(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 1, "", ""),  # no existing session
+        ("tmux new-session", 0, "[BOOT] QuantumOS ready\nTimer tick 1 received\n", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_qos_boot("alias-qos")
+    assert out["booted"] is True and out["already_running"] is False
+    assert out["session"] == "qos"
+    assert "tmux attach -t qos" in out["attach"]
+    # prep ran before boot and cloned the default repo
+    prep = next(c for _, c, _ in sh.calls if "apt-get" in c)
+    assert "flaukowski/QuantumOS" in prep and "make -C" in prep
+
+
+def test_qos_boot_existing_session_reported_not_clobbered(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 0, "", ""),
+        ("capture-pane", 0, "Timer tick 42 received\n", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_qos_boot("alias-qos")
+    assert out["already_running"] is True
+    assert not any("kill-session" in c for _, c, _ in sh.calls)
+    assert not any("apt-get" in c for _, c, _ in sh.calls)  # no rebuild
+
+
+def test_qos_boot_fresh_kills_and_reboots(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 0, "", ""),
+        ("tmux new-session", 0, "[BOOT] QuantumOS ready\n", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_qos_boot("alias-qos", fresh=True)
+    assert out["booted"] is True
+    assert any("kill-session" in c for _, c, _ in sh.calls)
+
+
+def test_qos_boot_build_failure_raises(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 1, "", ""),
+        ("apt-get", 2, "", "make: *** [kernel] Error 2"),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    with pytest.raises(RuntimeError, match="prep/build failed"):
+        lab.lab_qos_boot("alias-qos")
+
+
+def test_qos_boot_rejects_hostile_session_name(_isolated_leases, monkeypatch):
+    monkeypatch.setattr(lab, "_remote_ssh_sh", _FakeSh())
+    with pytest.raises(RuntimeError, match="invalid tmux session"):
+        lab.lab_qos_boot("alias-qos", session="qos; rm -rf /", allow_unleased=True)

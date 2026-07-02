@@ -1228,6 +1228,50 @@ tmux capture-pane -p -S -200 -t @SESSION@ | grep -v '^$' | tail -n 60
 """
 
 
+#: noVNC release the graphical watch pins (proven live 2026-07-02).
+QOS_NOVNC_VERSION = "1.5.0"
+#: Default local/remote web port for the websockify→VNC bridge.
+QOS_DEFAULT_WEB_PORT = 6080
+
+#: Rootless install of the graphical-watch deps: websockify (pip --user, no sudo)
+#: + a pinned noVNC tarball into ~/.local. Idempotent — skips what's present.
+_QOS_NOVNC_INSTALL = """
+set -e
+export PATH="$HOME/.local/bin:$PATH"
+if ! command -v websockify >/dev/null 2>&1; then
+  echo "[novnc] pip install --user websockify"
+  python3 -m pip install --user --quiet websockify
+fi
+NOVNC="$HOME/.local/noVNC-@VER@"
+if [ ! -f "$NOVNC/vnc_lite.html" ]; then
+  echo "[novnc] fetching noVNC @VER@"
+  curl -fsSL https://github.com/novnc/noVNC/archive/refs/tags/v@VER@.tar.gz | tar xz -C "$HOME/.local"
+fi
+[ -f "$NOVNC/vnc_lite.html" ] || { echo "[novnc] MISSING vnc_lite.html after fetch" >&2; exit 42; }
+echo "[novnc] ready: $NOVNC"
+"""
+
+#: Graphical boot: QEMU with a real VGA framebuffer over VNC, started PAUSED
+#: (``-S``) with a QEMU monitor unix socket so lab_watch resumes it (``cont``)
+#: once the operator's browser is attached. websockify serves noVNC + proxies
+#: the web port to the VNC port, both in their own detached tmux sessions so
+#: they outlive this call. Serial goes to a file (VNC owns the display) so
+#: boot-readiness is still greppable.
+_QOS_BOOT_GRAPHICAL_SCRIPT = """
+set -e
+export PATH="$HOME/.local/bin:$PATH"
+kernel=$(ls "$HOME"/QuantumOS/build/*/kernel.elf32 | head -1)
+mon="$HOME/.qos-@SESSION@.mon"; ser="$HOME/.qos-@SESSION@.serial"
+rm -f "$mon" "$ser"
+tmux new-session -d -s @SESSION@ \
+  "export PATH=\\"$HOME/.local/bin:$PATH\\"; qemu-system-x86_64 -kernel $kernel @APPEND@ -m 128M -vga std -vnc 127.0.0.1:@VNCDISP@ -S -monitor unix:$mon,server,nowait -serial file:$ser -no-reboot; echo; echo '[qemu exited]'; exec bash"
+tmux new-session -d -s @SESSION@-web \
+  "export PATH=\\"$HOME/.local/bin:$PATH\\"; websockify --web $HOME/.local/noVNC-@NOVNCVER@ @WEBPORT@ 127.0.0.1:@VNCPORT@; exec bash"
+sleep @SETTLE@
+echo "[graphical] qemu PAUSED (-S) + VGA over VNC :@VNCPORT@; websockify :@WEBPORT@; monitor=$mon"
+"""
+
+
 def _qos_booted(lines: list[str]) -> bool:
     """A kernel that printed its ready line — or is actively ticking — is up.
     The ready line can scroll out of even a deep capture once services and
@@ -1244,10 +1288,20 @@ def lab_qos_boot(
     allow_unleased: bool = False,
     timeout_secs: int = 540,
     qseed: Optional[str] = None,
+    graphical: bool = False,
+    web_port: int = QOS_DEFAULT_WEB_PORT,
 ) -> dict[str, Any]:
     """Boot QuantumOS in QEMU on a provisioned instance, inside a detached
     tmux session, and return the serial-console tail (the kernel prints
     "QuantumOS ready" when it reaches the idle loop, then timer ticks).
+
+    ``graphical=True`` boots with a real VGA framebuffer over VNC instead of the
+    text serial console: QEMU comes up PAUSED (``-S``) with ``-vga std -vnc`` and
+    a monitor socket, and websockify + noVNC (v1.5.0) are installed rootlessly to
+    serve it. The return carries the VNC/websockify/monitor coordinates; run
+    :func:`lab_watch` (CLI ``lab-watch``) to open an SSH ``-L`` tunnel, launch the
+    browser at ``vnc_lite.html``, and resume the VM (``cont``). Text mode stays
+    the default — the display contract is unchanged unless you opt in.
 
     ``qseed`` hands the kernel boot entropy on its Multiboot command line
     (``qseed=<hex>``, QuantumOS PR #40): pass ``"reservoir"`` to draw 64 RAW
@@ -1341,6 +1395,48 @@ def lab_qos_boot(
         out, _ = _cap(r.stdout)
         raise RuntimeError(f"QuantumOS prep/build failed (rc={r.returncode}): {err or out}"[:1200])
 
+    if graphical:
+        vnc_display = 0
+        vnc_port = 5900 + vnc_display
+        nv = _remote_ssh_sh(ssh_alias, _QOS_NOVNC_INSTALL.replace("@VER@", QOS_NOVNC_VERSION), timeout=timeout_secs)
+        if nv.returncode != 0:
+            nverr, _ = _cap(nv.stderr)
+            nvout, _ = _cap(nv.stdout)
+            raise RuntimeError(f"noVNC/websockify install failed (rc={nv.returncode}): {nverr or nvout}"[:1200])
+        gboot = (
+            _QOS_BOOT_GRAPHICAL_SCRIPT.replace("@SESSION@", session)
+            .replace("@SETTLE@", "3")
+            .replace("@APPEND@", f"-append qseed={qseed_hex}" if qseed_hex else "")
+            .replace("@VNCDISP@", str(vnc_display))
+            .replace("@VNCPORT@", str(vnc_port))
+            .replace("@WEBPORT@", str(int(web_port)))
+            .replace("@NOVNCVER@", QOS_NOVNC_VERSION)
+        )
+        gb = _remote_ssh_sh(ssh_alias, gboot, timeout=60)
+        if gb.returncode != 0:
+            gerr, _ = _cap(gb.stderr)
+            raise RuntimeError(f"QuantumOS graphical boot launch failed (rc={gb.returncode}): {gerr}"[:1200])
+        gout: dict[str, Any] = {
+            "ssh_alias": ssh_alias,
+            "session": session,
+            "already_running": False,
+            "graphical": True,
+            "paused": True,  # started with -S; lab_watch resumes it (cont)
+            "booted": False,
+            "vnc_port": vnc_port,
+            "web_port": int(web_port),
+            "monitor_socket": f"~/.qos-{session}.mon",
+            "tail": [ln for ln in (gb.stdout or "").splitlines() if ln.strip()],
+            "watch": f"kannaka-quantum lab-watch --ssh-alias {ssh_alias} --session {session} --web-port {int(web_port)}",
+            "note": "QEMU booted PAUSED with VGA over VNC; run lab_watch (CLI: lab-watch) to open an SSH -L "
+            "tunnel + the browser at vnc_lite.html and resume the VM (cont).",
+        }
+        if qseed_hex:
+            gout["qseed"] = qseed_hex
+            if qseed_provenance is not None:
+                gout["qseed_provenance"] = qseed_provenance
+        return gout
+
     boot = (
         _QOS_BOOT_SCRIPT.replace("@SESSION@", session)
         .replace("@SETTLE@", "4")
@@ -1384,3 +1480,71 @@ def lab_qos_boot(
         if qseed_provenance is not None:
             out["qseed_provenance"] = qseed_provenance
     return out
+
+
+def _qos_cont_command(session: str) -> str:
+    """Remote shell that sends ``cont`` to the QEMU monitor unix socket to
+    un-pause a graphical (``-S``) QuantumOS VM. Passes the socket path as argv so
+    there's no quoting hazard, and reads the monitor banner before writing."""
+    return (
+        f'mon="$HOME/.qos-{session}.mon"; python3 - "$mon" <<\'PY\'\n'
+        "import socket, sys\n"
+        "s = socket.socket(socket.AF_UNIX); s.connect(sys.argv[1])\n"
+        "try: s.recv(4096)\n"
+        "except Exception: pass\n"
+        's.sendall(b"cont\\n"); print("cont sent")\n'
+        "PY\n"
+    )
+
+
+def lab_watch(
+    ssh_alias: str,
+    session: str = "qos",
+    web_port: int = QOS_DEFAULT_WEB_PORT,
+    local_port: Optional[int] = None,
+    resume: bool = True,
+    open_browser: bool = True,
+) -> dict[str, Any]:
+    """Open the graphical QuantumOS watch for a ``lab_qos_boot(graphical=True)``
+    VM: an SSH ``-L`` tunnel (local → the remote websockify), the browser at
+    noVNC's ``vnc_lite.html``, and (``resume=True``) a monitor ``cont`` to
+    un-pause the ``-S`` VM.
+
+    Runs LOCALLY on the operator's machine — it launches a *detached* SSH tunnel
+    process (kill its PID to stop watching) and opens the default browser.
+    Returns the URL + tunnel PID. Text-mode /qos doesn't need this (attach the
+    tmux serial console instead)."""
+    local_port = int(local_port or web_port)
+    resumed: Optional[bool] = None
+    if resume:
+        r = _remote_ssh_sh(ssh_alias, _qos_cont_command(session), timeout=30)
+        resumed = r.returncode == 0
+
+    tunnel = subprocess.Popen(
+        [
+            "ssh", "-N",
+            "-o", "BatchMode=yes",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", f"UserKnownHostsFile={_known_hosts_path()}",
+            "-o", f"HostKeyAlias={ssh_alias}",
+            "-L", f"{local_port}:127.0.0.1:{int(web_port)}",
+            ssh_alias,
+        ],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    url = f"http://localhost:{local_port}/vnc_lite.html?autoconnect=1&resize=scale"
+    if open_browser:
+        import webbrowser
+
+        webbrowser.open(url)
+    return {
+        "ssh_alias": ssh_alias,
+        "session": session,
+        "url": url,
+        "local_port": local_port,
+        "web_port": int(web_port),
+        "tunnel_pid": tunnel.pid,
+        "resumed": resumed,
+        "note": f"SSH -L tunnel open (pid {tunnel.pid}) + browser launched at vnc_lite.html; VM resumed (cont). "
+        f"Stop watching by killing pid {tunnel.pid}.",
+    }

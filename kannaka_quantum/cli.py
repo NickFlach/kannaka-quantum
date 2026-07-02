@@ -292,6 +292,17 @@ def build_parser() -> argparse.ArgumentParser:
     qb.add_argument("--timeout-secs", type=int, default=540)
     qb.add_argument("--qseed", default=None,
                     help="kernel boot entropy: 'reservoir' (draw 64 raw QPU bits locally) or <=16 hex digits")
+    qb.add_argument("--graphical", action="store_true",
+                    help="boot with a VGA framebuffer over VNC (paused) + install noVNC; watch with lab-watch")
+    qb.add_argument("--web-port", type=int, default=lab.QOS_DEFAULT_WEB_PORT, help="websockify web port for --graphical")
+
+    wt = sub.add_parser("lab-watch", help="open the graphical QuantumOS watch (SSH -L tunnel + browser + resume)")
+    wt.add_argument("--ssh-alias", required=True)
+    wt.add_argument("--session", default="qos")
+    wt.add_argument("--web-port", type=int, default=lab.QOS_DEFAULT_WEB_PORT)
+    wt.add_argument("--local-port", type=int, default=None)
+    wt.add_argument("--no-resume", action="store_true", help="don't send monitor 'cont' (VM already running)")
+    wt.add_argument("--no-browser", action="store_true", help="set up the tunnel but don't open a browser")
 
     sb = sub.add_parser("ssh-bridge", help="Windows-safe websocket<->stdio SSH ProxyCommand shim")
     sb.add_argument("url")
@@ -406,6 +417,17 @@ def _dispatch_lab(args) -> Optional[dict]:
             allow_unleased=args.allow_unleased,
             timeout_secs=args.timeout_secs,
             qseed=args.qseed,
+            graphical=args.graphical,
+            web_port=args.web_port,
+        )
+    if cmd == "lab-watch":
+        return lab.lab_watch(
+            args.ssh_alias,
+            session=args.session,
+            web_port=args.web_port,
+            local_port=args.local_port,
+            resume=not args.no_resume,
+            open_browser=not args.no_browser,
         )
     return None
 

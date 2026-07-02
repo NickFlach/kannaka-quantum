@@ -2,6 +2,8 @@
 CLI arg parsing). The live API path is exercised by hand against the account.
 """
 
+import subprocess
+
 import pytest
 
 from kannaka_quantum import lab
@@ -438,3 +440,80 @@ def test_qos_boot_no_qseed_has_no_append(_isolated_leases, monkeypatch):
     assert "qseed" not in out
     boot_cmd = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
     assert "-append" not in boot_cmd
+
+
+# ── /qos graphical watch (T4.3 #43) — all mocked, no SSH, no VM ─────────────
+
+
+class _FakeSsh:
+    """Records _remote_ssh_sh commands; 'has-session' reports no session so the
+    boot proceeds, everything else succeeds."""
+    def __init__(self):
+        self.commands = []
+
+    def __call__(self, ssh_alias, command, timeout=90, stdin=""):
+        self.commands.append(command)
+        rc = 1 if "has-session" in command else 0
+        return subprocess.CompletedProcess(args=[], returncode=rc, stdout="", stderr="")
+
+
+def test_qos_boot_graphical_installs_novnc_and_boots_vnc_paused(_isolated_leases, monkeypatch):
+    fake = _FakeSsh()
+    monkeypatch.setattr(lab, "_remote_ssh_sh", fake)
+    out = lab.lab_qos_boot("alias-x", graphical=True, allow_unleased=True)
+
+    joined = "\n".join(fake.commands)
+    # noVNC + websockify install ran, pinned to the proven version.
+    assert "websockify" in joined and f"noVNC-{lab.QOS_NOVNC_VERSION}" in joined
+    # Graphical boot uses a real VGA framebuffer over VNC, started PAUSED, with a monitor.
+    assert "-vga std" in joined and "-vnc 127.0.0.1:0" in joined and "-S " in joined and "-monitor unix:" in joined
+
+    assert out["graphical"] is True and out["paused"] is True
+    assert out["vnc_port"] == 5900 and out["web_port"] == lab.QOS_DEFAULT_WEB_PORT
+    assert out["booted"] is False  # paused until lab_watch resumes it
+    assert "lab-watch" in out["watch"]
+
+
+def test_qos_boot_text_mode_is_default_no_vnc(_isolated_leases, monkeypatch):
+    fake = _FakeSsh()
+    monkeypatch.setattr(lab, "_remote_ssh_sh", fake)
+    out = lab.lab_qos_boot("alias-x", allow_unleased=True)
+    joined = "\n".join(fake.commands)
+    assert "-vnc" not in joined and "websockify" not in joined  # display contract preserved
+    assert out.get("graphical") is None
+
+
+def test_qos_cont_command_targets_monitor_socket():
+    cmd = lab._qos_cont_command("qos")
+    assert ".qos-qos.mon" in cmd and "AF_UNIX" in cmd and "sendall" in cmd and "cont" in cmd
+
+
+class _FakePopen:
+    def __init__(self, argv, **kw):
+        self.argv = argv
+        self.pid = 4242
+
+
+def test_lab_watch_tunnels_resumes_and_opens_browser(monkeypatch, tmp_path):
+    monkeypatch.setenv("KANNAKA_DATA_DIR", str(tmp_path))
+    sent = {}
+    monkeypatch.setattr(lab, "_remote_ssh_sh",
+                        lambda a, c, timeout=90, stdin="": sent.update(cont=c) or subprocess.CompletedProcess([], 0, "", ""))
+    captured = {}
+
+    def _fake_popen(argv, **kw):
+        captured["argv"] = argv
+        return _FakePopen(argv)
+
+    monkeypatch.setattr(lab.subprocess, "Popen", _fake_popen)
+    import webbrowser
+    monkeypatch.setattr(webbrowser, "open", lambda u: captured.__setitem__("url", u))
+
+    out = lab.lab_watch("alias-x", session="qos", web_port=6080, local_port=6080)
+
+    assert out["resumed"] is True and out["tunnel_pid"] == 4242
+    assert "cont" in sent["cont"]  # monitor resume sent
+    # SSH -L tunnel: local -> remote websockify
+    assert "-L" in captured["argv"] and "6080:127.0.0.1:6080" in captured["argv"]
+    assert out["url"] == "http://localhost:6080/vnc_lite.html?autoconnect=1&resize=scale"
+    assert captured["url"] == out["url"]  # browser opened at the watch URL

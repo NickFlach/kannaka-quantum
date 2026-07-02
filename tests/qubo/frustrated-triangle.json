@@ -1,0 +1,14 @@
+{
+  "format": "kannaka-qubo/1",
+  "problem_id": "golden-frustrated-triangle",
+  "variables": [
+    {"id": 0, "kind": "merge", "subject": "mem:t0"},
+    {"id": 1, "kind": "merge", "subject": "mem:t1"},
+    {"id": 2, "kind": "merge", "subject": "mem:t2"},
+    {"id": 3, "kind": "keep_link", "subject": "skip:t3"},
+    {"id": 4, "kind": "keep_link", "subject": "skip:t4"}
+  ],
+  "linear": {"0": -0.5, "1": -0.5, "2": -0.5, "3": -1.2, "4": -1.2},
+  "quadratic": {"0,1": 1.0, "1,2": 1.0, "0,2": 1.0, "3,4": -0.8},
+  "metadata": {"note": "frustrated triangle (0,1,2) plus an attractive pair (3,4)"}
+}

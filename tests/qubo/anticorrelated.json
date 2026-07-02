@@ -1,0 +1,11 @@
+{
+  "format": "kannaka-qubo/1",
+  "problem_id": "golden-anticorrelated",
+  "variables": [
+    {"id": 0, "kind": "keep_link", "subject": "skip:aa"},
+    {"id": 1, "kind": "keep_link", "subject": "skip:bb"}
+  ],
+  "linear": {"0": -1.0, "1": -1.0},
+  "quadratic": {"0,1": 3.0},
+  "metadata": {"note": "both attractive alone; strongly repulsive together -> keep exactly one"}
+}

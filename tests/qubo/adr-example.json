@@ -1,0 +1,13 @@
+{
+  "format": "kannaka-qubo/1",
+  "problem_id": "golden-adr-example",
+  "variables": [
+    {"id": 0, "kind": "keep_link", "subject": "skip:9f2c"},
+    {"id": 1, "kind": "merge", "subject": "mem:a41b+mem:77e0"},
+    {"id": 2, "kind": "strengthen", "subject": "skip:c3d9"}
+  ],
+  "linear": {"0": -1.7, "1": 0.4, "2": -0.9},
+  "quadratic": {"0,2": -0.6, "1,2": 1.1},
+  "constraints": {"budget": {"vars": [0, 1, 2], "max_active": 2, "penalty": 8.0}},
+  "metadata": {"hemisphere": "right", "note": "verbatim from ADR-0038 (minus penalty fold)"}
+}

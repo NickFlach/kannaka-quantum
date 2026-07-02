@@ -14,6 +14,7 @@ from . import bench
 from . import core
 from . import entropy
 from . import lab
+from . import qubo
 
 
 def _parse_json_arg(s: Optional[str]):
@@ -137,6 +138,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="write this run as the baseline (to --baseline) and skip the gate",
     )
+
+    qb = sub.add_parser(
+        "qubo",
+        help="solve a kannaka-qubo/1 problem with QAOA (ADR-0038 consolidation solver)",
+    )
+    qb.add_argument("--problem-file", help="path to a kannaka-qubo/1 JSON file ('-' or omit reads stdin)")
+    qb.add_argument("--device", default=core.LOCAL_DEVICE, help=_DEVICE_HELP)
+    qb.add_argument("--shots", type=int, default=1024)
+    qb.add_argument("--max-p", type=int, default=3, help="max QAOA depth to try (p=1..max-p, default 3)")
+    _add_spend_opts(qb)
 
     # --- qBraid Lab / infrastructure ---------------------------------------
     sub.add_parser("lab-credits", help="show qBraid credit balance")
@@ -388,6 +399,22 @@ def main(argv: Optional[list[str]] = None) -> int:
                 shots=args.shots,
                 amplify=not args.no_amplify,
                 device=args.device,
+                allow_spend=args.allow_spend,
+                max_credits=args.max_credits,
+                subcategory=args.subcategory,
+            )
+        elif args.cmd == "qubo":
+            if args.problem_file and args.problem_file != "-":
+                problem_text = open(args.problem_file, encoding="utf-8").read()
+            else:  # stdin — the JSON-CLI boundary the Rust SubprocessSolver uses.
+                problem_text = sys.stdin.buffer.read().decode("utf-8-sig", errors="replace")
+            if not problem_text.strip():
+                raise ValueError("no kannaka-qubo/1 problem provided (use --problem-file or stdin)")
+            out = qubo.solve(
+                qubo.load_problem(problem_text),
+                device=args.device,
+                shots=args.shots,
+                max_p=args.max_p,
                 allow_spend=args.allow_spend,
                 max_credits=args.max_credits,
                 subcategory=args.subcategory,

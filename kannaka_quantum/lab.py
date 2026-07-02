@@ -19,6 +19,7 @@ invoice.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -1266,23 +1267,34 @@ fi
 echo "[novnc] ready: $HOME/noVNC"
 """
 
-#: Graphical boot: QEMU with a real VGA framebuffer over VNC, started PAUSED
-#: (``-S``) with a TCP QEMU monitor so lab_qos_resume can ``cont`` it once the
-#: operator's browser is attached. Launched via a nohup SCRIPT FILE, NOT inline
-#: tmux -- deep ssh->tmux->bash quoting kills the tmux server (learned live).
-#: serial -> a file (VNC owns the display); websockify serves noVNC + proxies to
-#: VNC. The libasound / "multiboot knows VBE. we don't" warnings are NON-FATAL
+#: boot.sh body for the graphical boot. Kept SEPARATE and delivered base64-encoded
+#: (see below) so nothing in it has to survive shell quoting: ``$HOME``/``$PATH``/
+#: ``$kernel`` are expanded on the instance at boot.sh runtime (the kernel is
+#: self-discovered here, not injected), and @APPEND@/@VNCDISP@/@MONPORT@/@SESSION@
+#: are substituted in Python. VGA framebuffer over VNC, started PAUSED (``-S``)
+#: with a TCP QEMU monitor so lab_qos_resume can ``cont`` it once the browser is
+#: attached; serial -> a file (VNC owns the display).
+_QOS_GRAPHICAL_BOOT_SH = """#!/bin/sh
+export PATH="$HOME/.local/bin:$PATH"
+kernel=$(ls "$HOME"/QuantumOS/build/*/kernel.elf32 | head -1)
+exec qemu-system-x86_64 -kernel "$kernel" @APPEND@ -vga std -vnc 127.0.0.1:@VNCDISP@ -S -monitor tcp:127.0.0.1:@MONPORT@,server,nowait -m 128M -nic none -no-reboot -serial file:/tmp/qosg-@SESSION@.log
+"""
+
+#: Graphical boot launcher. The boot.sh body (above) is base64-encoded in Python
+#: and decoded on the instance -- NOT written via a nested heredoc, which broke
+#: under Windows OpenSSH's argument quoting (the ``<<QOSG`` heredoc with ``\\$HOME``
+#: escaping got mangled inside ``bash -lc <shlex.quote(...)>``, so boot.sh was
+#: never written and ``set -e`` aborted before any process launched -- banner-only
+#: output, rc=-1). base64 carries only [A-Za-z0-9+/=], immune to that quoting.
+#: Launched via a nohup SCRIPT FILE, NOT inline tmux -- deep ssh->tmux->bash
+#: quoting kills the tmux server (learned live). websockify serves noVNC + proxies
+#: to VNC. The libasound / "multiboot knows VBE. we don't" warnings are NON-FATAL
 #: (VBE decline -> the kernel's VGA-text splash renders, which is the animation).
 _QOS_BOOT_GRAPHICAL_SCRIPT = """
 set -e
 export PATH="$HOME/.local/bin:$PATH"
-kernel=$(ls "$HOME"/QuantumOS/build/*/kernel.elf32 | head -1)
 boot="$HOME/.qos-@SESSION@-boot.sh"
-cat > "$boot" <<QOSG
-#!/bin/sh
-export PATH="\\$HOME/.local/bin:\\$PATH"
-exec qemu-system-x86_64 -kernel $kernel @APPEND@ -vga std -vnc 127.0.0.1:@VNCDISP@ -S -monitor tcp:127.0.0.1:@MONPORT@,server,nowait -m 128M -nic none -no-reboot -serial file:/tmp/qosg-@SESSION@.log
-QOSG
+printf '%s' @BOOT_B64@ | base64 -d > "$boot"
 chmod +x "$boot"
 pkill -f "vnc 127.0.0.1:@VNCDISP@" 2>/dev/null || true
 pkill -f "noVNC @WEBPORT@" 2>/dev/null || true
@@ -1431,10 +1443,17 @@ def lab_qos_boot(
             nverr, _ = _cap(nv.stderr)
             nvout, _ = _cap(nv.stdout)
             raise RuntimeError(f"noVNC/websockify install failed (rc={nv.returncode}): {nverr or nvout}"[:1200])
+        boot_sh = (
+            _QOS_GRAPHICAL_BOOT_SH.replace("@APPEND@", f"-append qseed={qseed_hex}" if qseed_hex else "")
+            .replace("@VNCDISP@", str(vnc_display))
+            .replace("@MONPORT@", str(int(monitor_port)))
+            .replace("@SESSION@", session)
+        )
+        boot_b64 = base64.b64encode(boot_sh.encode("utf-8")).decode("ascii")
         gboot = (
-            _QOS_BOOT_GRAPHICAL_SCRIPT.replace("@SESSION@", session)
+            _QOS_BOOT_GRAPHICAL_SCRIPT.replace("@BOOT_B64@", boot_b64)
+            .replace("@SESSION@", session)
             .replace("@SETTLE@", "3")
-            .replace("@APPEND@", f"-append qseed={qseed_hex}" if qseed_hex else "")
             .replace("@VNCDISP@", str(vnc_display))
             .replace("@VNCPORT@", str(vnc_port))
             .replace("@WEBPORT@", str(int(web_port)))

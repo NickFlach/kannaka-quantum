@@ -2,6 +2,8 @@
 CLI arg parsing). The live API path is exercised by hand against the account.
 """
 
+import base64
+import re
 import subprocess
 
 import pytest
@@ -465,9 +467,17 @@ def test_qos_boot_graphical_installs_novnc_and_boots_vnc_paused(_isolated_leases
     joined = "\n".join(fake.commands)
     # noVNC + websockify install ran, pinned to the STABLE v1.5.0 tag (git clone, not tarball).
     assert "websockify" in joined and "--branch v1.5.0" in joined and "noVNC" in joined
-    # Graphical boot: VGA framebuffer over VNC, PAUSED, TCP monitor, launched via nohup (NOT tmux).
-    assert "-vga std" in joined and "-vnc 127.0.0.1:0" in joined and "-S " in joined
-    assert "-monitor tcp:127.0.0.1:4444" in joined and "nohup" in joined and "tmux new-session" not in joined
+    # boot.sh is delivered base64-encoded (immune to Windows OpenSSH arg-quoting) and
+    # decoded on the instance -- NOT a nested heredoc -- then launched via nohup (NOT tmux).
+    assert "base64 -d" in joined and "nohup" in joined
+    assert "tmux new-session" not in joined and "<<QOSG" not in joined
+    # The decoded boot.sh carries the real QEMU launch: VGA framebuffer over VNC, PAUSED
+    # (-S), TCP monitor, kernel self-discovered on the instance (not injected by the host).
+    m = re.search(r"printf '%s' (\S+) \| base64 -d", joined)
+    assert m, "graphical boot must deliver boot.sh via base64 -d"
+    boot_sh = base64.b64decode(m.group(1)).decode()
+    assert "-vga std" in boot_sh and "-vnc 127.0.0.1:0" in boot_sh and "-S " in boot_sh
+    assert "-monitor tcp:127.0.0.1:4444" in boot_sh and "kernel.elf32" in boot_sh
 
     assert out["graphical"] is True and out["paused"] is True
     assert out["vnc_port"] == 5900 and out["novnc_web_port"] == lab.QOS_DEFAULT_WEB_PORT

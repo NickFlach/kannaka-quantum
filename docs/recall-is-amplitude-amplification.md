@@ -172,14 +172,28 @@ to the metal, which is the precondition for recall surviving it too.
 a small subset of the corpus, executed quarterly with per-run cost logged — lives
 under `bench/results/hw/`, summarized in `bench/LEDGER.md`.
 
-> **TODO-cite (T2.3, in progress).** At the time of writing, the hardware ledger
-> (`bench/LEDGER.md` + `bench/results/hw/`) has not yet been committed — the first
-> quarterly run is being generated. Once it lands, cite the measured hardware
-> agreement rate and cost here; the expectation is agreement below the 100% ideal
-> ceiling but well above chance, degrading gracefully with device noise the same
-> way the Bell state does. This section is the only part of this writeup gated on
-> that data; the simulator correspondence and the derivation above stand on their
-> own.
+**Row one — the first quarterly recall run (T2.3).** A 5-scenario subset of the
+corpus, 200 shots each, on `aws:rigetti:qpu:cepheus-1-108q`:
+
+| run | device | scenarios | agreement | argmax mismatches | cost |
+|---|---|---|---|---|---|
+| simulator ceiling | `local:statevector` | 50 | **100%** | 0 | $0 |
+| real QPU | `aws:rigetti:qpu:cepheus-1-108q` | 5 × 200 shots | **40%** (2/5) | 0 | ≈ $1.925 |
+
+The `argmax_mismatches: 0` is the load-bearing detail: the corpus and the classical
+decode are intact, so the gap is **pure device noise**, not a logic error. And the
+gap is large — 40% vs the Bell state's 94.5% — for a concrete reason: recall is a
+*far deeper* circuit than a Bell pair. Each scenario is a 4-qubit
+`StatePreparation(16)` (a dense amplitude encoding of all sixteen candidates)
+followed by one-to-two amplification iterations; the two-qubit Bell state is
+shallow by comparison, so its entanglement survives the metal where recall's
+prepared-and-amplified state partly decoheres. 40% still sits well above the
+~6.25% uniform-guess floor for sixteen candidates, so the structure is not erased —
+but this is the honest current distance between the ideal correspondence and
+today's hardware. Closing it is what the ledger tracks: see `bench/LEDGER.md`
+(row 0 Bell, row 1 this run) and `bench/results/hw/rigetti-cepheus-2026-07-01.json`.
+The full-50 run is deferred to a cheaper per-shot budget (OpenQuantum), per the
+runbook in `bench/LEDGER.md`.
 
 ---
 

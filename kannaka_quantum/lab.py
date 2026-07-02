@@ -676,6 +676,14 @@ def lab_stop_instance(instance_id: str) -> dict[str, Any]:
     from qbraid_core.services.compute import ComputeClient
 
     inst = _client(ComputeClient).stop_bma_instance(instance_id)
+    # Mark the lease stopped so it isn't left dangling "active" — an active-past-lease
+    # ghost that lab_reap keeps chasing (and that never gets a close event in the
+    # ledger). Mirrors lab_terminate_instance; lab_start_instance re-activates the
+    # lease with a fresh window. (A stopped instance is intentionally paused, so reap
+    # skips it; freeing its disk still needs lab_terminate_instance.)
+    _append_lease(
+        {"instance_id": instance_id, "status": "stopped", "stopped_at": _iso(_now_utc()), "event": "stop"}
+    )
     return {
         "stopped": True,
         "instance_id": instance_id,

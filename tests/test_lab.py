@@ -218,6 +218,25 @@ def test_terminate_instance_frees_and_marks_lease(_isolated_leases, monkeypatch)
     assert "i-term" not in fake.stopped_instances
 
 
+def test_stop_instance_marks_lease_stopped(_isolated_leases, monkeypatch):
+    # Stopping must append a close event so the lease isn't left dangling "active"
+    # past its expiry -- the active-past-lease ghost lab-reap keeps chasing (and
+    # that never gets a close event in the ledger).
+    fake = _FakeComputeClient()
+    monkeypatch.setattr(lab, "_client", lambda cls: fake)
+    lab._append_lease({"instance_id": "i-stop", "kind": "instance", "ssh_alias": "a-stop",
+                       "status": "active", "expires_at": "2000-01-01T00:00:00Z", "event": "provision"})
+
+    out = lab.lab_stop_instance("i-stop")
+    assert out["stopped"] is True
+    assert fake.stopped_instances == ["i-stop"]
+    assert lab._read_leases()["i-stop"]["status"] == "stopped"
+
+    # The lease is now closed, so an expiry reap must NOT chase it (no second stop).
+    lab.lab_reap()
+    assert fake.stopped_instances == ["i-stop"]
+
+
 class _FakeLauncher:
     def __init__(self):
         self.launched = []

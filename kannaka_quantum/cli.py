@@ -10,6 +10,7 @@ import json
 import sys
 from typing import Optional
 
+from . import bell
 from . import bench
 from . import core
 from . import entropy
@@ -148,6 +149,11 @@ def build_parser() -> argparse.ArgumentParser:
     qb.add_argument("--shots", type=int, default=1024)
     qb.add_argument("--max-p", type=int, default=3, help="max QAOA depth to try (p=1..max-p, default 3)")
     _add_spend_opts(qb)
+
+    bl = sub.add_parser("bell", help="CHSH inequality test (S ~= 2sqrt(2) on the simulator)")
+    bl.add_argument("--device", default=core.LOCAL_DEVICE, help=_DEVICE_HELP)
+    bl.add_argument("--shots", type=int, default=4096, help="shots per CHSH setting (default 4096)")
+    _add_spend_opts(bl)
 
     # --- qBraid Lab / infrastructure ---------------------------------------
     sub.add_parser("lab-credits", help="show qBraid credit balance")
@@ -435,6 +441,14 @@ def main(argv: Optional[list[str]] = None) -> int:
                 device=args.device,
                 shots=args.shots,
                 max_p=args.max_p,
+                allow_spend=args.allow_spend,
+                max_credits=args.max_credits,
+                subcategory=args.subcategory,
+            )
+        elif args.cmd == "bell":
+            out = bell.chsh(
+                device=args.device,
+                shots=args.shots,
                 allow_spend=args.allow_spend,
                 max_credits=args.max_credits,
                 subcategory=args.subcategory,

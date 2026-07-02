@@ -295,14 +295,20 @@ def build_parser() -> argparse.ArgumentParser:
     qb.add_argument("--graphical", action="store_true",
                     help="boot with a VGA framebuffer over VNC (paused) + install noVNC; watch with lab-watch")
     qb.add_argument("--web-port", type=int, default=lab.QOS_DEFAULT_WEB_PORT, help="websockify web port for --graphical")
+    qb.add_argument("--monitor-port", type=int, default=lab.QOS_DEFAULT_MONITOR_PORT, help="QEMU TCP monitor port for --graphical")
 
     wt = sub.add_parser("lab-watch", help="open the graphical QuantumOS watch (SSH -L tunnel + browser + resume)")
     wt.add_argument("--ssh-alias", required=True)
     wt.add_argument("--session", default="qos")
     wt.add_argument("--web-port", type=int, default=lab.QOS_DEFAULT_WEB_PORT)
+    wt.add_argument("--monitor-port", type=int, default=lab.QOS_DEFAULT_MONITOR_PORT)
     wt.add_argument("--local-port", type=int, default=None)
     wt.add_argument("--no-resume", action="store_true", help="don't send monitor 'cont' (VM already running)")
     wt.add_argument("--no-browser", action="store_true", help="set up the tunnel but don't open a browser")
+
+    qr = sub.add_parser("lab-qos-resume", help="resume a paused graphical QuantumOS VM (monitor cont)")
+    qr.add_argument("--ssh-alias", required=True)
+    qr.add_argument("--monitor-port", type=int, default=lab.QOS_DEFAULT_MONITOR_PORT)
 
     sb = sub.add_parser("ssh-bridge", help="Windows-safe websocket<->stdio SSH ProxyCommand shim")
     sb.add_argument("url")
@@ -419,16 +425,20 @@ def _dispatch_lab(args) -> Optional[dict]:
             qseed=args.qseed,
             graphical=args.graphical,
             web_port=args.web_port,
+            monitor_port=args.monitor_port,
         )
     if cmd == "lab-watch":
         return lab.lab_watch(
             args.ssh_alias,
             session=args.session,
             web_port=args.web_port,
+            monitor_port=args.monitor_port,
             local_port=args.local_port,
             resume=not args.no_resume,
             open_browser=not args.no_browser,
         )
+    if cmd == "lab-qos-resume":
+        return lab.lab_qos_resume(args.ssh_alias, monitor_port=args.monitor_port)
     return None
 
 

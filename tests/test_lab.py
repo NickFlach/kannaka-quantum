@@ -463,15 +463,17 @@ def test_qos_boot_graphical_installs_novnc_and_boots_vnc_paused(_isolated_leases
     out = lab.lab_qos_boot("alias-x", graphical=True, allow_unleased=True)
 
     joined = "\n".join(fake.commands)
-    # noVNC + websockify install ran, pinned to the proven version.
-    assert "websockify" in joined and f"noVNC-{lab.QOS_NOVNC_VERSION}" in joined
-    # Graphical boot uses a real VGA framebuffer over VNC, started PAUSED, with a monitor.
-    assert "-vga std" in joined and "-vnc 127.0.0.1:0" in joined and "-S " in joined and "-monitor unix:" in joined
+    # noVNC + websockify install ran, pinned to the STABLE v1.5.0 tag (git clone, not tarball).
+    assert "websockify" in joined and "--branch v1.5.0" in joined and "noVNC" in joined
+    # Graphical boot: VGA framebuffer over VNC, PAUSED, TCP monitor, launched via nohup (NOT tmux).
+    assert "-vga std" in joined and "-vnc 127.0.0.1:0" in joined and "-S " in joined
+    assert "-monitor tcp:127.0.0.1:4444" in joined and "nohup" in joined and "tmux new-session" not in joined
 
     assert out["graphical"] is True and out["paused"] is True
-    assert out["vnc_port"] == 5900 and out["web_port"] == lab.QOS_DEFAULT_WEB_PORT
+    assert out["vnc_port"] == 5900 and out["novnc_web_port"] == lab.QOS_DEFAULT_WEB_PORT
+    assert out["monitor_port"] == lab.QOS_DEFAULT_MONITOR_PORT and out["vnc_display"] == 0
     assert out["booted"] is False  # paused until lab_watch resumes it
-    assert "lab-watch" in out["watch"]
+    assert "lab-watch" in out["resume_hint"]
 
 
 def test_qos_boot_text_mode_is_default_no_vnc(_isolated_leases, monkeypatch):
@@ -483,9 +485,19 @@ def test_qos_boot_text_mode_is_default_no_vnc(_isolated_leases, monkeypatch):
     assert out.get("graphical") is None
 
 
-def test_qos_cont_command_targets_monitor_socket():
-    cmd = lab._qos_cont_command("qos")
-    assert ".qos-qos.mon" in cmd and "AF_UNIX" in cmd and "sendall" in cmd and "cont" in cmd
+def test_qos_cont_command_targets_tcp_monitor():
+    cmd = lab._qos_cont_command_tcp(4444)
+    assert "create_connection" in cmd and "4444" in cmd and "sendall" in cmd and "cont" in cmd
+
+
+def test_lab_qos_resume_sends_cont(monkeypatch, tmp_path):
+    monkeypatch.setenv("KANNAKA_DATA_DIR", str(tmp_path))
+    sent = {}
+    monkeypatch.setattr(lab, "_remote_ssh_sh",
+                        lambda a, c, timeout=90, stdin="": sent.update(cmd=c) or subprocess.CompletedProcess([], 0, "cont sent", ""))
+    out = lab.lab_qos_resume("alias-x", monitor_port=4444)
+    assert out["resumed"] is True and out["monitor_port"] == 4444
+    assert "4444" in sent["cmd"] and "cont" in sent["cmd"]
 
 
 class _FakePopen:

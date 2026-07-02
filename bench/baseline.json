@@ -1,8 +1,8 @@
 {
   "format": "kannaka-recall-bench-baseline/1",
-  "generated_at": "2026-07-01T23:53:27.751546+00:00",
+  "generated_at": "2026-07-01T23:59:21.953044+00:00",
   "device": "local:statevector",
-  "shots": 1024,
+  "shots": 2048,
   "scenarios_scored": 50,
   "agreement_rate": 100.0,
   "corpus": "bench/corpus.json",

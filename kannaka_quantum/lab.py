@@ -1267,39 +1267,27 @@ fi
 echo "[novnc] ready: $HOME/noVNC"
 """
 
-#: boot.sh body for the graphical boot. Kept SEPARATE and delivered base64-encoded
-#: (see below) so nothing in it has to survive shell quoting: ``$HOME``/``$PATH``/
-#: ``$kernel`` are expanded on the instance at boot.sh runtime (the kernel is
-#: self-discovered here, not injected), and @APPEND@/@VNCDISP@/@MONPORT@/@SESSION@
-#: are substituted in Python. VGA framebuffer over VNC, started PAUSED (``-S``)
-#: with a TCP QEMU monitor so lab_qos_resume can ``cont`` it once the browser is
-#: attached; serial -> a file (VNC owns the display).
-_QOS_GRAPHICAL_BOOT_SH = """#!/bin/sh
+#: The graphical launcher -- delivered base64-encoded and run as a FILE. Running it
+#: as a file is LOAD-BEARING (proven live): the previous version ran this
+#: orchestration inline via ``bash -lc '<script>'``, so the shell's OWN command line
+#: contained the literal ``vnc 127.0.0.1:0`` -- and ``pkill -f "vnc 127.0.0.1:0"``
+#: then matched and killed its own parent shell, rc=-1, banner-only, before anything
+#: launched. (This, not the earlier nested heredoc, was the real Windows-vs-manual
+#: bug: the manual recipe ran a script file, whose cmdline is just ``sh <path>``.)
+#: As a file, pkill/pgrep -f match only the real qemu/websockify. $HOME/$PATH/$kernel
+#: stay deferred to the instance; the kernel is self-discovered; @APPEND@/@VNCDISP@/
+#: @VNCPORT@/@WEBPORT@/@MONPORT@/@SESSION@/@SETTLE@ are substituted in Python. VGA
+#: framebuffer over VNC, started PAUSED (``-S``) with a TCP monitor so lab_qos_resume
+#: can ``cont`` it once the browser is attached; serial -> a file. The libasound /
+#: "multiboot knows VBE. we don't" warnings are NON-FATAL (VBE decline -> the
+#: kernel's VGA-text splash renders, which is the animation).
+_QOS_GRAPHICAL_LAUNCHER = """#!/bin/sh
 export PATH="$HOME/.local/bin:$PATH"
-kernel=$(ls "$HOME"/QuantumOS/build/*/kernel.elf32 | head -1)
-exec qemu-system-x86_64 -kernel "$kernel" @APPEND@ -vga std -vnc 127.0.0.1:@VNCDISP@ -S -monitor tcp:127.0.0.1:@MONPORT@,server,nowait -m 128M -nic none -no-reboot -serial file:/tmp/qosg-@SESSION@.log
-"""
-
-#: Graphical boot launcher. The boot.sh body (above) is base64-encoded in Python
-#: and decoded on the instance -- NOT written via a nested heredoc, which broke
-#: under Windows OpenSSH's argument quoting (the ``<<QOSG`` heredoc with ``\\$HOME``
-#: escaping got mangled inside ``bash -lc <shlex.quote(...)>``, so boot.sh was
-#: never written and ``set -e`` aborted before any process launched -- banner-only
-#: output, rc=-1). base64 carries only [A-Za-z0-9+/=], immune to that quoting.
-#: Launched via a nohup SCRIPT FILE, NOT inline tmux -- deep ssh->tmux->bash
-#: quoting kills the tmux server (learned live). websockify serves noVNC + proxies
-#: to VNC. The libasound / "multiboot knows VBE. we don't" warnings are NON-FATAL
-#: (VBE decline -> the kernel's VGA-text splash renders, which is the animation).
-_QOS_BOOT_GRAPHICAL_SCRIPT = """
-set -e
-export PATH="$HOME/.local/bin:$PATH"
-boot="$HOME/.qos-@SESSION@-boot.sh"
-printf '%s' @BOOT_B64@ | base64 -d > "$boot"
-chmod +x "$boot"
 pkill -f "vnc 127.0.0.1:@VNCDISP@" 2>/dev/null || true
 pkill -f "noVNC @WEBPORT@" 2>/dev/null || true
-nohup "$boot" >/tmp/qosg-@SESSION@-launch.log 2>&1 &
-nohup websockify --web "$HOME/noVNC" @WEBPORT@ 127.0.0.1:@VNCPORT@ >/tmp/qosg-@SESSION@-ws.log 2>&1 &
+kernel=$(ls "$HOME"/QuantumOS/build/*/kernel.elf32 | head -1)
+nohup qemu-system-x86_64 -kernel "$kernel" @APPEND@ -vga std -vnc 127.0.0.1:@VNCDISP@ -S -monitor tcp:127.0.0.1:@MONPORT@,server,nowait -m 128M -nic none -no-reboot -serial file:/tmp/qosg-@SESSION@.log </dev/null >/tmp/qosg-@SESSION@-launch.log 2>&1 &
+nohup websockify --web "$HOME/noVNC" @WEBPORT@ 127.0.0.1:@VNCPORT@ </dev/null >/tmp/qosg-@SESSION@-ws.log 2>&1 &
 sleep @SETTLE@
 if pgrep -f "vnc 127.0.0.1:@VNCDISP@" >/dev/null; then
   echo "[graphical] qemu PAUSED (-S) VGA/VNC :@VNCPORT@ monitor tcp:@MONPORT@; websockify :@WEBPORT@"
@@ -1308,6 +1296,18 @@ else
   tail -8 /tmp/qosg-@SESSION@-launch.log >&2 2>/dev/null || true
   exit 43
 fi
+"""
+
+#: Graphical boot payload sent over SSH: write the launcher from base64 and run it as
+#: a FILE. Nothing here contains a pkill/pgrep pattern literally (the launcher is an
+#: opaque base64 blob), so the ``bash -lc`` shell can't be self-matched; base64 also
+#: sidesteps any nested-heredoc / arg-quoting fragility on Windows OpenSSH.
+_QOS_BOOT_GRAPHICAL_SCRIPT = """
+set -e
+launcher="$HOME/.qos-@SESSION@-launcher.sh"
+printf '%s' @LAUNCHER_B64@ | base64 -d > "$launcher"
+chmod +x "$launcher"
+sh "$launcher"
 """
 
 
@@ -1443,22 +1443,17 @@ def lab_qos_boot(
             nverr, _ = _cap(nv.stderr)
             nvout, _ = _cap(nv.stdout)
             raise RuntimeError(f"noVNC/websockify install failed (rc={nv.returncode}): {nverr or nvout}"[:1200])
-        boot_sh = (
-            _QOS_GRAPHICAL_BOOT_SH.replace("@APPEND@", f"-append qseed={qseed_hex}" if qseed_hex else "")
-            .replace("@VNCDISP@", str(vnc_display))
-            .replace("@MONPORT@", str(int(monitor_port)))
-            .replace("@SESSION@", session)
-        )
-        boot_b64 = base64.b64encode(boot_sh.encode("utf-8")).decode("ascii")
-        gboot = (
-            _QOS_BOOT_GRAPHICAL_SCRIPT.replace("@BOOT_B64@", boot_b64)
-            .replace("@SESSION@", session)
-            .replace("@SETTLE@", "3")
+        launcher = (
+            _QOS_GRAPHICAL_LAUNCHER.replace("@APPEND@", f"-append qseed={qseed_hex}" if qseed_hex else "")
             .replace("@VNCDISP@", str(vnc_display))
             .replace("@VNCPORT@", str(vnc_port))
             .replace("@WEBPORT@", str(int(web_port)))
             .replace("@MONPORT@", str(int(monitor_port)))
+            .replace("@SESSION@", session)
+            .replace("@SETTLE@", "3")
         )
+        launcher_b64 = base64.b64encode(launcher.encode("utf-8")).decode("ascii")
+        gboot = _QOS_BOOT_GRAPHICAL_SCRIPT.replace("@LAUNCHER_B64@", launcher_b64).replace("@SESSION@", session)
         gb = _remote_ssh_sh(ssh_alias, gboot, timeout=60)
         if gb.returncode != 0:
             gerr, _ = _cap(gb.stderr)

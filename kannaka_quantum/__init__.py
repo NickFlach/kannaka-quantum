@@ -69,4 +69,4 @@ __all__ = [
     "lab_exec",
     "lab_qos_boot",
 ]
-__version__ = "0.2.7"
+__version__ = "0.2.8"

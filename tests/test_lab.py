@@ -467,17 +467,25 @@ def test_qos_boot_graphical_installs_novnc_and_boots_vnc_paused(_isolated_leases
     joined = "\n".join(fake.commands)
     # noVNC + websockify install ran, pinned to the STABLE v1.5.0 tag (git clone, not tarball).
     assert "websockify" in joined and "--branch v1.5.0" in joined and "noVNC" in joined
-    # boot.sh is delivered base64-encoded (immune to Windows OpenSSH arg-quoting) and
-    # decoded on the instance -- NOT a nested heredoc -- then launched via nohup (NOT tmux).
-    assert "base64 -d" in joined and "nohup" in joined
-    assert "tmux new-session" not in joined and "<<QOSG" not in joined
-    # The decoded boot.sh carries the real QEMU launch: VGA framebuffer over VNC, PAUSED
-    # (-S), TCP monitor, kernel self-discovered on the instance (not injected by the host).
-    m = re.search(r"printf '%s' (\S+) \| base64 -d", joined)
-    assert m, "graphical boot must deliver boot.sh via base64 -d"
-    boot_sh = base64.b64decode(m.group(1)).decode()
-    assert "-vga std" in boot_sh and "-vnc 127.0.0.1:0" in boot_sh and "-S " in boot_sh
-    assert "-monitor tcp:127.0.0.1:4444" in boot_sh and "kernel.elf32" in boot_sh
+
+    # The graphical boot delivers its launcher base64-encoded and runs it as a FILE.
+    gcmd = next(c for c in fake.commands if "base64 -d" in c)
+    assert 'sh "$launcher"' in gcmd
+    assert "tmux new-session" not in gcmd and "<<QOSG" not in gcmd
+    # REGRESSION (self-kill, proven live): the pkill/pgrep patterns MUST live inside the
+    # base64 launcher, never inline in the bash -lc payload. Inline, the shell's own
+    # command line contained "vnc 127.0.0.1:0", so `pkill -f "vnc 127.0.0.1:0"` matched
+    # and killed its own parent shell -- rc=-1, banner-only, nothing launched.
+    assert "pkill" not in gcmd and "pgrep" not in gcmd
+    m = re.search(r"printf '%s' (\S+) \| base64 -d", gcmd)
+    assert m, "graphical boot must deliver the launcher via base64 -d"
+    launcher = base64.b64decode(m.group(1)).decode()
+    assert "pkill -f" in launcher and "pgrep -f" in launcher and "nohup" in launcher
+    # The launcher carries the real QEMU launch + websockify bridge: VGA framebuffer over
+    # VNC, PAUSED (-S), TCP monitor, kernel self-discovered on the instance.
+    assert "-vga std" in launcher and "-vnc 127.0.0.1:0" in launcher and "-S " in launcher
+    assert "-monitor tcp:127.0.0.1:4444" in launcher and "kernel.elf32" in launcher
+    assert "websockify" in launcher and "qemu-system-x86_64" in launcher
 
     assert out["graphical"] is True and out["paused"] is True
     assert out["vnc_port"] == 5900 and out["novnc_web_port"] == lab.QOS_DEFAULT_WEB_PORT

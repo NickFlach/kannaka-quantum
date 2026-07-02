@@ -73,7 +73,7 @@ def _mk_recall(disagree_indices: set[int] | None = None):
     disagree = disagree_indices or set()
     state = {"n": 0}
 
-    def _recall(amplitudes, labels=None, shots=1024, amplify=True, device=None):
+    def _recall(amplitudes, labels=None, shots=1024, amplify=True, device=None, **_kwargs):
         idx = state["n"]
         state["n"] += 1
         classical = int(max(range(len(amplitudes)), key=lambda i: amplitudes[i]))
@@ -113,6 +113,14 @@ def test_run_bench_partial_agreement_rate():
     assert res["scenarios_scored"] == 4
     assert res["agreements"] == 3
     assert res["agreement_rate"] == 75.0
+
+
+def test_run_bench_limit_runs_subset():
+    corpus = _corpus([_scn([0.9, 0.1]), _scn([0.2, 0.8]), _scn([0.5, 0.4]), _scn([0.3, 0.7])])
+    res = bench.run_bench(corpus, recall_fn=_mk_recall(), limit=2)
+    assert res["scenarios_scored"] == 2
+    assert res["limit"] == 2
+    assert res["scenarios_total"] == 2
 
 
 def test_run_bench_skips_empty_candidate_scenarios():

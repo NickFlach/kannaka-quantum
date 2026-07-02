@@ -78,6 +78,10 @@ def run_bench(
     device: str = core.LOCAL_DEVICE,
     shots: int = 1024,
     amplify: bool = True,
+    limit: Optional[int] = None,
+    allow_spend: bool = False,
+    max_credits: Optional[float] = None,
+    subcategory: Optional[str] = None,
     recall_fn: Optional[RecallFn] = None,
 ) -> dict[str, Any]:
     """Run every scenario through recall and aggregate the agreement rate.
@@ -95,6 +99,8 @@ def run_bench(
     """
     recall = recall_fn or core.quantum_recall
     scenarios = corpus.get("scenarios", [])
+    if limit is not None:
+        scenarios = scenarios[: max(0, int(limit))]
 
     per_scenario: list[dict[str, Any]] = []
     agreements = 0
@@ -108,7 +114,16 @@ def run_bench(
             skipped += 1
             continue
 
-        res = recall(amplitudes, labels=labels, shots=shots, amplify=amplify, device=device)
+        res = recall(
+            amplitudes,
+            labels=labels,
+            shots=shots,
+            amplify=amplify,
+            device=device,
+            allow_spend=allow_spend,
+            max_credits=max_credits,
+            subcategory=subcategory,
+        )
         agree = bool(res.get("agree"))
         scored += 1
         if agree:
@@ -151,6 +166,7 @@ def run_bench(
         "device": device,
         "shots": shots,
         "amplify": amplify,
+        "limit": limit,
         "scenarios_total": len(scenarios),
         "scenarios_scored": scored,
         "scenarios_skipped": skipped,
@@ -222,6 +238,10 @@ def bench_command(
     device: str = core.LOCAL_DEVICE,
     shots: int = 1024,
     amplify: bool = True,
+    limit: Optional[int] = None,
+    allow_spend: bool = False,
+    max_credits: Optional[float] = None,
+    subcategory: Optional[str] = None,
     out: Optional[str] = None,
     baseline: Optional[str] = None,
     regression_threshold: float = DEFAULT_REGRESSION_POINTS,
@@ -236,7 +256,17 @@ def bench_command(
     always passes.
     """
     corpus = load_corpus(scenarios)
-    result = run_bench(corpus, device=device, shots=shots, amplify=amplify, recall_fn=recall_fn)
+    result = run_bench(
+        corpus,
+        device=device,
+        shots=shots,
+        amplify=amplify,
+        limit=limit,
+        allow_spend=allow_spend,
+        max_credits=max_credits,
+        subcategory=subcategory,
+        recall_fn=recall_fn,
+    )
 
     if out:
         _write_json(out, result)

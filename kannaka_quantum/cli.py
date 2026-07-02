@@ -125,6 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
         "'qbraid:qbraid:sim:qir-sv' for the hosted free simulator.",
     )
     bn.add_argument("--shots", type=int, default=1024)
+    bn.add_argument("--limit", type=int, default=None, help="only run the first N scenarios (e.g. a HW subset)")
     bn.add_argument("--no-amplify", action="store_true", help="skip amplitude amplification")
     bn.add_argument("--out", default=None, help="write the full result JSON to this path")
     bn.add_argument("--baseline", default=None, help="baseline JSON to gate against (regression = agreement drop > threshold)")
@@ -139,6 +140,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="write this run as the baseline (to --baseline) and skip the gate",
     )
+    _add_spend_opts(bn)
 
     qb = sub.add_parser(
         "qubo",
@@ -461,6 +463,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                 device=args.device,
                 shots=args.shots,
                 amplify=not args.no_amplify,
+                limit=args.limit,
+                allow_spend=args.allow_spend,
+                max_credits=args.max_credits,
+                subcategory=args.subcategory,
                 out=args.out,
                 baseline=args.baseline,
                 regression_threshold=args.regression_threshold,

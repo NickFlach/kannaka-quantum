@@ -274,6 +274,20 @@ def build_parser() -> argparse.ArgumentParser:
     atd = sub.add_parser("lab-agent-teardown", help="delete the uploaded key from a remote instance + rotation reminder")
     atd.add_argument("--ssh-alias", required=True)
 
+    ex = sub.add_parser("lab-exec", help="run a shell command on a provisioned instance over SSH")
+    ex.add_argument("--ssh-alias", required=True)
+    ex.add_argument("--command", required=True)
+    ex.add_argument("--timeout-secs", type=int, default=90)
+
+    qb = sub.add_parser("lab-qos-boot", help="boot QuantumOS in QEMU on a provisioned instance (tmux serial console)")
+    qb.add_argument("--ssh-alias", required=True)
+    qb.add_argument("--repo", default=None)
+    qb.add_argument("--ref", default=None)
+    qb.add_argument("--session", default="qos")
+    qb.add_argument("--fresh", action="store_true", help="kill an existing session and reboot from a rebuilt kernel")
+    qb.add_argument("--allow-unleased", action="store_true")
+    qb.add_argument("--timeout-secs", type=int, default=540)
+
     sb = sub.add_parser("ssh-bridge", help="Windows-safe websocket<->stdio SSH ProxyCommand shim")
     sb.add_argument("url")
     sb.add_argument("--token", default=None)
@@ -373,6 +387,18 @@ def _dispatch_lab(args) -> Optional[dict]:
         )
     if cmd == "lab-agent-teardown":
         return lab.lab_agent_teardown(args.ssh_alias)
+    if cmd == "lab-exec":
+        return lab.lab_exec(args.ssh_alias, args.command, timeout_secs=args.timeout_secs)
+    if cmd == "lab-qos-boot":
+        return lab.lab_qos_boot(
+            args.ssh_alias,
+            repo=args.repo or lab.QOS_DEFAULT_REPO,
+            ref=args.ref,
+            session=args.session,
+            fresh=args.fresh,
+            allow_unleased=args.allow_unleased,
+            timeout_secs=args.timeout_secs,
+        )
     return None
 
 

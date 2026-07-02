@@ -18,6 +18,7 @@ real hardware only under the standard spend guards via :func:`core.run_qiskit`.
 from __future__ import annotations
 
 import math
+import os
 from typing import Any, Optional
 
 from . import core
@@ -55,6 +56,23 @@ def _correlation(counts: dict[str, int], device: str) -> float:
     return signed / total if total else 0.0
 
 
+def _preflight_spend_guard(device: str, allow_spend: bool) -> None:
+    """Refuse a real-QPU run before any qBraid auth/network, mirroring the
+    qubo/recall discipline. Simulators (``local:*`` / ids containing ``sim``)
+    are always free. Without this, a real device would surface a qBraid auth
+    error instead of a clear spend refusal when no credentials are configured.
+    """
+    if device.startswith(core.LOCAL_PREFIX) or "sim" in device.lower():
+        return
+    if allow_spend or os.environ.get("KANNAKA_QUANTUM_ALLOW_SPEND") == "1":
+        return
+    raise RuntimeError(
+        f"{device} is a real QPU and spends credits. Re-run with allow_spend=True "
+        f"(CLI: --allow-spend) or set KANNAKA_QUANTUM_ALLOW_SPEND=1. Use the free "
+        f"simulator ({core.DEFAULT_DEVICE}) or {core.LOCAL_DEVICE} for $0."
+    )
+
+
 def chsh(
     *,
     device: str = core.LOCAL_DEVICE,
@@ -68,6 +86,7 @@ def chsh(
     Returns a JSON-able dict with S, the four correlators, the angles, and
     whether the classical bound was violated. On a noiseless simulator S ≈ 2√2.
     """
+    _preflight_spend_guard(device, allow_spend)
     settings = [
         ("a0b0", ALICE_ANGLES[0], BOB_ANGLES[0]),
         ("a0b1", ALICE_ANGLES[0], BOB_ANGLES[1]),

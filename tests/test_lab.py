@@ -349,3 +349,69 @@ def test_qos_boot_rejects_hostile_session_name(_isolated_leases, monkeypatch):
     monkeypatch.setattr(lab, "_remote_ssh_sh", _FakeSh())
     with pytest.raises(RuntimeError, match="invalid tmux session"):
         lab.lab_qos_boot("alias-qos", session="qos; rm -rf /", allow_unleased=True)
+
+
+def test_qos_boot_qseed_reservoir_draw_passes_append_and_provenance(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    from kannaka_quantum import entropy
+
+    monkeypatch.setattr(entropy, "draw", lambda n_bits, expand: {
+        "int": 0x00112233445566, "bits": "", "n_bits": n_bits,
+        "provenance": [{"job_id": "qjob-test", "device": "rigetti-test"}],
+    })
+    # The kernel's padded-uppercase echo is verified by a dedicated
+    # scrollback grep (the echo prints before the returned tail window).
+    sh = _FakeSh([
+        ("has-session", 1, "", ""),
+        ("grep -q", 0, "", ""),  # echo found in scrollback
+        ("tmux new-session", 0, "[BOOT] QuantumOS ready\n", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_qos_boot("alias-qos", qseed="reservoir")
+    assert out["qseed"] == "00112233445566".zfill(16)
+    assert out["qseed_confirmed"] is True
+    grep_cmd = next(c for _, c, _ in sh.calls if "grep -q" in c)
+    assert "0000112233445566".upper() in grep_cmd  # exact padded echo matched
+    assert out["qseed_provenance"][0]["job_id"] == "qjob-test"
+    boot_cmd = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
+    assert "-append qseed=0000112233445566" in boot_cmd
+
+
+def test_qos_boot_qseed_explicit_hex_and_unconfirmed(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 1, "", ""),
+        ("grep -q", 1, "", ""),  # echo not found anywhere in scrollback
+        ("tmux new-session", 0, "[BOOT] QuantumOS ready\n", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_qos_boot("alias-qos", qseed="0xDEADBEEF")
+    assert out["qseed"] == "deadbeef"
+    assert out["qseed_confirmed"] is False  # honest: echo not observed
+    assert "qseed_provenance" not in out    # explicit seeds carry no chain
+    boot_cmd = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
+    assert "-append qseed=deadbeef" in boot_cmd
+
+
+def test_qos_boot_qseed_rejects_garbage(_isolated_leases, monkeypatch):
+    monkeypatch.setattr(lab, "_remote_ssh_sh", _FakeSh())
+    with pytest.raises(RuntimeError, match="qseed must be"):
+        lab.lab_qos_boot("alias-qos", qseed="not-hex!", allow_unleased=True)
+    with pytest.raises(RuntimeError, match="qseed must be"):
+        lab.lab_qos_boot("alias-qos", qseed="00112233445566778899", allow_unleased=True)  # >16 digits
+
+
+def test_qos_boot_no_qseed_has_no_append(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 1, "", ""),
+        ("tmux new-session", 0, "[BOOT] QuantumOS ready\n", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_qos_boot("alias-qos")
+    assert "qseed" not in out
+    boot_cmd = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
+    assert "-append" not in boot_cmd

@@ -287,6 +287,8 @@ def build_parser() -> argparse.ArgumentParser:
     qb.add_argument("--fresh", action="store_true", help="kill an existing session and reboot from a rebuilt kernel")
     qb.add_argument("--allow-unleased", action="store_true")
     qb.add_argument("--timeout-secs", type=int, default=540)
+    qb.add_argument("--qseed", default=None,
+                    help="kernel boot entropy: 'reservoir' (draw 64 raw QPU bits locally) or <=16 hex digits")
 
     sb = sub.add_parser("ssh-bridge", help="Windows-safe websocket<->stdio SSH ProxyCommand shim")
     sb.add_argument("url")
@@ -398,6 +400,7 @@ def _dispatch_lab(args) -> Optional[dict]:
             fresh=args.fresh,
             allow_unleased=args.allow_unleased,
             timeout_secs=args.timeout_secs,
+            qseed=args.qseed,
         )
     return None
 

@@ -1199,9 +1199,9 @@ set -e
 export PATH="$HOME/.local/bin:$PATH"
 kernel=$(ls "$HOME"/QuantumOS/build/*/kernel.elf32 | head -1)
 tmux new-session -d -s @SESSION@ \
-  "export PATH=\\"$HOME/.local/bin:$PATH\\"; qemu-system-x86_64 -kernel $kernel -serial stdio -m 128M -display none -vga none -nic none -no-reboot; echo; echo '[qemu exited]'; exec bash"
+  "export PATH=\\"$HOME/.local/bin:$PATH\\"; qemu-system-x86_64 -kernel $kernel @APPEND@ -serial stdio -m 128M -display none -vga none -nic none -no-reboot; echo; echo '[qemu exited]'; exec bash"
 sleep @SETTLE@
-tmux capture-pane -p -S -200 -t @SESSION@ | grep -v '^$' | tail -n 40
+tmux capture-pane -p -S -200 -t @SESSION@ | grep -v '^$' | tail -n 60
 """
 
 
@@ -1220,10 +1220,20 @@ def lab_qos_boot(
     fresh: bool = False,
     allow_unleased: bool = False,
     timeout_secs: int = 540,
+    qseed: Optional[str] = None,
 ) -> dict[str, Any]:
     """Boot QuantumOS in QEMU on a provisioned instance, inside a detached
     tmux session, and return the serial-console tail (the kernel prints
     "QuantumOS ready" when it reaches the idle loop, then timer ticks).
+
+    ``qseed`` hands the kernel boot entropy on its Multiboot command line
+    (``qseed=<hex>``, QuantumOS PR #40): pass ``"reservoir"`` to draw 64 RAW
+    bits from the local quantum-entropy reservoir (real QPU bits with a
+    provenance chain; raises if the reservoir is empty — never a silent PRNG
+    fallback), or an explicit hex value (≤16 digits). The kernel echoes the
+    accepted seed zero-padded on serial; ``qseed_confirmed`` reports whether
+    that exact echo was observed in the boot tail (fresh boots only —
+    honest stamping, no claim without the observation).
 
     Idempotent: deps are installed only if missing, the clone is updated in
     place, and an already-running session is reported (with its current tail)
@@ -1236,6 +1246,22 @@ def lab_qos_boot(
     bound. Override deliberately with ``allow_unleased=True``."""
     if not session.replace("-", "").replace("_", "").isalnum():
         raise RuntimeError(f"lab_qos_boot: invalid tmux session name '{session}'")
+    qseed_hex: Optional[str] = None
+    qseed_provenance = None
+    if qseed:
+        if qseed == "reservoir":
+            from . import entropy
+
+            d = entropy.draw(64, expand=False)
+            qseed_hex = f"{d['int']:016x}"
+            qseed_provenance = d["provenance"]
+        else:
+            s = qseed.lower().removeprefix("0x")
+            if not (1 <= len(s) <= 16) or any(c not in "0123456789abcdef" for c in s):
+                raise RuntimeError(
+                    f"lab_qos_boot: qseed must be 'reservoir' or up to 16 hex digits, got '{qseed}'"
+                )
+            qseed_hex = s
     lease = _lease_for_alias(ssh_alias)
     if not allow_unleased and (lease is None or lease.get("status") != "active"):
         raise RuntimeError(
@@ -1292,14 +1318,18 @@ def lab_qos_boot(
         out, _ = _cap(r.stdout)
         raise RuntimeError(f"QuantumOS prep/build failed (rc={r.returncode}): {err or out}"[:1200])
 
-    boot = _QOS_BOOT_SCRIPT.replace("@SESSION@", session).replace("@SETTLE@", "4")
+    boot = (
+        _QOS_BOOT_SCRIPT.replace("@SESSION@", session)
+        .replace("@SETTLE@", "4")
+        .replace("@APPEND@", f"-append qseed={qseed_hex}" if qseed_hex else "")
+    )
     b = _remote_ssh_sh(ssh_alias, boot, timeout=60)
     if b.returncode != 0:
         err, _ = _cap(b.stderr)
         raise RuntimeError(f"QuantumOS boot launch failed (rc={b.returncode}): {err}"[:1200])
     lines = [ln for ln in (b.stdout or "").splitlines() if ln.strip()]
     booted = _qos_booted(lines)
-    return {
+    out: dict[str, Any] = {
         "ssh_alias": ssh_alias,
         "session": session,
         "already_running": False,
@@ -1313,3 +1343,21 @@ def lab_qos_boot(
             f"lab_exec 'tmux capture-pane -p -t {session} | tail -n 25'"
         ),
     }
+    if qseed_hex:
+        # The kernel re-prints the accepted seed zero-padded uppercase
+        # (early_console_write_hex) in the FIRST boot lines — by capture time
+        # the kernel has logged well past the returned tail, so confirm with
+        # a dedicated grep over the full scrollback rather than the tail.
+        echo = f"{int(qseed_hex, 16):016X}"
+        # grep -q exits 0 only on a real match (ssh/tmux failure is nonzero
+        # too, which honestly reads as unconfirmed).
+        g = _remote_ssh_sh(
+            ssh_alias,
+            f"tmux capture-pane -p -S -300 -t {shlex.quote(session)} | grep -q {echo}",
+            timeout=30,
+        )
+        out["qseed"] = qseed_hex
+        out["qseed_confirmed"] = g.returncode == 0
+        if qseed_provenance is not None:
+            out["qseed_provenance"] = qseed_provenance
+    return out

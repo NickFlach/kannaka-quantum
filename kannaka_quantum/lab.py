@@ -622,7 +622,7 @@ def lab_provision_instance(
         # the approving human should see that pausing still bills for disk.
         "stopped_credits_per_min": getattr(inst, "stopped_credits_per_min", None),
         "note": "Even after lab_stop_instance (pause), this instance keeps billing stopped_credits_per_min "
-        "for its disk until terminated via the qBraid web UI (no agent terminate, by design).",
+        "for its disk until terminated. Run lab_terminate_instance for the full teardown (frees disk, stops all billing).",
     }
     if wait and instance_id:
         try:
@@ -671,7 +671,7 @@ def lab_start_instance(
 def lab_stop_instance(instance_id: str) -> dict[str, Any]:
     """Stop (pause) an on-demand instance — disk preserved, running billing
     stops. (A stopped instance still bills ``stopped_credits_per_min`` for disk;
-    terminate-and-delete is left to the qBraid web UI by design.)"""
+    call :func:`lab_terminate_instance` to free the disk and stop all billing.)"""
     from qbraid_core.services.compute import ComputeClient
 
     inst = _client(ComputeClient).stop_bma_instance(instance_id)
@@ -679,8 +679,31 @@ def lab_stop_instance(instance_id: str) -> dict[str, Any]:
         "stopped": True,
         "instance_id": instance_id,
         "instance": _dump(inst),
-        "note": "Disk preserved; a stopped instance still bills stopped_credits_per_min until terminated "
-        "(terminate via the qBraid web UI to free the disk and stop all billing).",
+        "note": "Disk preserved; a stopped instance still bills stopped_credits_per_min until terminated. "
+        "Run lab_terminate_instance to free the disk and stop ALL billing.",
+    }
+
+
+def lab_terminate_instance(instance_id: str) -> dict[str, Any]:
+    """Terminate an on-demand instance — the FULL teardown: frees the disk and
+    stops ALL billing (running *and* ``stopped_credits_per_min``), and destroys
+    anything left on it (e.g. an uploaded API key or NATS creds). Unlike
+    :func:`lab_stop_instance` (pause, keeps billing disk), this is destructive
+    and final. Marks the lease terminated so :func:`lab_reap` won't chase it.
+
+    (Verified live 2026-07-02: ``terminate_bma_instance`` works from the API — no
+    qBraid web UI required, contrary to earlier notes.)"""
+    from qbraid_core.services.compute import ComputeClient
+
+    inst = _client(ComputeClient).terminate_bma_instance(instance_id)
+    _append_lease(
+        {"instance_id": instance_id, "status": "terminated", "terminated_at": _iso(_now_utc()), "event": "terminate"}
+    )
+    return {
+        "terminated": True,
+        "instance_id": instance_id,
+        "instance": _dump(inst),
+        "note": "Instance destroyed: disk freed, all billing stopped, and any uploaded secrets are gone.",
     }
 
 

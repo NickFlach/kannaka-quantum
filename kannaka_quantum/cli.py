@@ -233,6 +233,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("lab-stop-instance", help="stop (pause) an instance (preserves disk)")
     sp.add_argument("--instance-id", required=True)
 
+    tp = sub.add_parser("lab-terminate-instance", help="TERMINATE an instance (frees disk, stops ALL billing)")
+    tp.add_argument("--instance-id", required=True)
+
     rp = sub.add_parser("lab-reap", help="stop instances/servers past their lease (cron/timer-friendly)")
     rp.add_argument("--dry-run", action="store_true", help="report what would be stopped without stopping")
 
@@ -362,6 +365,8 @@ def _dispatch_lab(args) -> Optional[dict]:
         )
     if cmd == "lab-stop-instance":
         return lab.lab_stop_instance(args.instance_id)
+    if cmd == "lab-terminate-instance":
+        return lab.lab_terminate_instance(args.instance_id)
     if cmd == "lab-reap":
         return lab.lab_reap(dry_run=args.dry_run)
     if cmd == "lab-ssh-configure":

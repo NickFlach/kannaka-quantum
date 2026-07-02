@@ -134,6 +134,11 @@ class _FakeComputeClient:
         self.stopped_servers.append(cluster_id)
         return {"stopped_server": cluster_id}
 
+    def terminate_bma_instance(self, instance_id):
+        self.terminated_instances = getattr(self, "terminated_instances", [])
+        self.terminated_instances.append(instance_id)
+        return {"instance_id": instance_id, "status": "terminated"}
+
 
 def test_provision_records_lease(_isolated_leases, monkeypatch):
     from qbraid_core.services.compute import ComputeClient
@@ -189,6 +194,24 @@ def test_reap_dry_run_stops_nothing(_isolated_leases, monkeypatch):
     assert out["reaped_count"] == 1
     assert out["reaped"][0]["would_stop"] is True
     assert lab._read_leases()["i-exp"]["status"] == "active"  # untouched
+
+
+def test_terminate_instance_frees_and_marks_lease(_isolated_leases, monkeypatch):
+    # Full teardown: terminate_bma_instance is called and the lease is marked
+    # terminated so a later lab-reap won't chase a gone instance.
+    fake = _FakeComputeClient()
+    monkeypatch.setattr(lab, "_client", lambda cls: fake)
+    lab._append_lease({"instance_id": "i-term", "kind": "instance", "ssh_alias": "a-term",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+
+    out = lab.lab_terminate_instance("i-term")
+    assert out["terminated"] is True
+    assert fake.terminated_instances == ["i-term"]
+    assert lab._read_leases()["i-term"]["status"] == "terminated"
+
+    # A subsequent reap must NOT try to stop a terminated instance.
+    lab.lab_reap()
+    assert "i-term" not in fake.stopped_instances
 
 
 class _FakeLauncher:

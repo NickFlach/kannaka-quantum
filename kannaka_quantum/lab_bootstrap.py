@@ -106,27 +106,33 @@ def testbed_build_plan(scenarios_path: Optional[str] = None) -> list[dict[str, s
 
 def ephemeral_lifecycle_plan(
     profile: str,
-    max_minutes: int = 15,
+    max_minutes: int = 5,
     release_repo: str = DEFAULT_RELEASE_REPO,
     nats_url: Optional[str] = None,
 ) -> dict[str, Any]:
     """The ordered ephemeral-node lifecycle (T4.3): a structured plan usable by
     the runnable script and asserted by the mocked test. Provision → verified
-    install → NATS join → absorb/dream → graceful drain on reap."""
+    install → authenticated NATS join → absorb → graceful leave → reap-by-expiry
+    → terminate. A SHORT lease makes reap-by-expiry fire within the run."""
     steps = [
-        {"step": "provision", "action": f"lab_provision_instance({profile!r}, max_minutes={max_minutes}) — leased"},
-        {"step": "ssh_configure", "action": "lab_ssh_configure(instance_id) -> ssh_alias"},
-        {"step": "install", "action": "remote: sha256-verified install (hard-fail on missing checksum)"},
-        {"step": "nats_join", "action": "remote: kannaka swarm join (ephemeral node) — requires NATS creds"},
-        {"step": "absorb_dream", "action": "remote: kannaka hear / dream for the lease window"},
-        {"step": "drain", "action": "remote: kannaka swarm drain (graceful) before stop"},
-        {"step": "reap", "action": "lab_reap() stops the instance at lease expiry (T4.1)"},
+        {"step": "provision", "action": f"lab_provision_instance({profile!r}, max_minutes={max_minutes}) — leased (docker-vm profile)"},
+        {"step": "ssh_configure", "action": "lab_ssh_configure(instance_id) -> ssh_alias (Windows OpenSSH for the alias)"},
+        {"step": "install", "action": "remote: sha256-verified install (hard-fail on missing checksum; CRLF-stripped over ssh)"},
+        {"step": "nats_join", "action": "remote: upload NATS creds + URL, then kannaka swarm join (authenticated, not anon)"},
+        {"step": "absorb", "action": "remote: kannaka remember / dream for the lease window"},
+        {"step": "leave", "action": "remote: kannaka swarm leave (graceful; verb is 'leave', not 'drain')"},
+        {"step": "reap", "action": "wait for lease expiry, then lab_reap() stops the expired instance (LIVE-VERIFIES T4.1)"},
+        {"step": "terminate", "action": "lab_terminate_instance() — full teardown: frees disk, stops ALL billing, no orphan"},
     ]
     return {
         "profile": profile,
         "max_minutes": max_minutes,
         "release_repo": release_repo,
         "nats_url": nats_url,
-        "requires": ["qbraid credits", "NATS mesh creds (~/.kannaka-nats.env or config.toml [swarm])"],
+        "requires": [
+            "qbraid credits",
+            "a docker-vm/BMA profile (e.g. cpu-4v-6g; NOT 2vCPU_4GB)",
+            "NATS mesh creds (~/.kannaka-nats.env: NATS_USER/NATS_PASSWORD) + URL (config.toml [swarm] nats_url)",
+        ],
         "steps": steps,
     }

@@ -40,12 +40,15 @@ def test_testbed_build_plan_builds_and_tests_the_engine():
 
 
 def test_ephemeral_lifecycle_plan_order_and_requirements():
-    plan = lb.ephemeral_lifecycle_plan("cpu-small", max_minutes=15)
+    plan = lb.ephemeral_lifecycle_plan("cpu-4v-6g", max_minutes=5)
     steps = [s["step"] for s in plan["steps"]]
-    assert steps == ["provision", "ssh_configure", "install", "nats_join", "absorb_dream", "drain", "reap"]
-    assert plan["max_minutes"] == 15
-    # The NATS-creds dependency is surfaced (why the live run may need Nick).
+    assert steps == ["provision", "ssh_configure", "install", "nats_join", "absorb", "leave", "reap", "terminate"]
+    assert plan["max_minutes"] == 5
+    # reap-by-expiry then a full terminate (no residual disk billing).
+    assert steps.index("reap") < steps.index("terminate")
+    # The NATS-creds dependency + docker-vm profile requirement are surfaced.
     assert any("NATS" in r for r in plan["requires"])
+    assert any("docker-vm" in r for r in plan["requires"])
 
 
 # ── T4.3: the hard-fail-on-missing-checksum install (security-critical) ──────

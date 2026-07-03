@@ -309,3 +309,140 @@ def test_qos_bridge_relay_once_file_no_nats_verifies_and_counts():
     assert out["attestation"]["ok"]
     assert out["nats"] is False
     assert out["would_publish"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# Embassy mode — join the swarm ONLY behind a verified boot attestation
+# --------------------------------------------------------------------------- #
+def _bitflip_first_sig(blob: bytes) -> bytes:
+    """Flip one bit inside the first SIG frame's payload and repair that frame's
+    CRC, so the capture parses cleanly but the Lamport signature fails to verify
+    (isolates a *signature* failure from a mere CRC failure)."""
+    buf = bytearray(blob)
+    i = 0
+    while i < len(buf):
+        if buf[i] != qb.MAGIC:
+            i += 1
+            continue
+        if i + 4 > len(buf):
+            break
+        ftype = buf[i + 1]
+        length = buf[i + 2] | (buf[i + 3] << 8)
+        end = i + 4 + length
+        if end + 1 > len(buf):
+            break
+        if qb.crc8(bytes(buf[i + 1:end])) == buf[end] and ftype == qb.FRAME_SIG and length > 0:
+            buf[i + 4] ^= 0x01
+            buf[end] = qb.crc8(bytes(buf[i + 1:end]))
+            return bytes(buf)
+        i = end + 1
+    raise AssertionError("no SIG frame found to corrupt")
+
+
+class _BytesSource(qb.ByteSource):
+    """A one-shot in-memory ByteSource: hands back the whole blob once, then EOF."""
+
+    two_way = False
+
+    def __init__(self, blob: bytes) -> None:
+        self._blob = blob
+        self._done = False
+
+    def read(self, max_bytes: int = 4096, timeout=None) -> bytes:
+        if self._done:
+            return b""
+        self._done = True
+        return self._blob
+
+
+class _FakeProc:
+    pid = 4242
+
+    def terminate(self) -> None:
+        pass
+
+    def poll(self):
+        return None
+
+
+def _fake_swarm(agent_id=None, kannaka_bin="kannaka.exe", peers_stdout=""):
+    """A KannakaSwarm whose join (spawn) and leave/peers (run) are captured argv,
+    never touching NATS. Returns (swarm, calls) where calls is the argv log."""
+    calls: list[list[str]] = []
+
+    def fake_spawn(argv):
+        calls.append(list(argv))
+        return _FakeProc()
+
+    class _Completed:
+        returncode = 0
+        stderr = ""
+
+        def __init__(self, stdout=""):
+            self.stdout = stdout
+
+    def fake_run(argv):
+        calls.append(list(argv))
+        return _Completed(peers_stdout if argv[-1] == "peers" else "")
+
+    sw = qb.KannakaSwarm(agent_id=agent_id, kannaka_bin=kannaka_bin, spawn=fake_spawn, run=fake_run)
+    return sw, calls
+
+
+def test_default_agent_id_from_qseed():
+    assert qb.default_agent_id("DEADBEEFCAFEBABE") == "qos-deadbeefcafebabe"
+    assert qb.default_agent_id("none") == "qos-node"
+    assert qb.default_agent_id(None) == "qos-node"
+
+
+def test_kannaka_swarm_join_leave_argv():
+    sw, _ = _fake_swarm(agent_id="qos-live-node")
+    assert sw.join_argv() == ["kannaka.exe", "swarm", "join", "--agent-id", "qos-live-node"]
+    assert sw.leave_argv() == ["kannaka.exe", "swarm", "leave"]
+
+
+def test_embassy_joins_on_valid_attestation_and_leaves_on_teardown():
+    sink = qb.CaptureSink()
+    sw, calls = _fake_swarm(agent_id=None)  # derive the id from the attested qseed
+    src = _BytesSource(QSEED_CAP.read_bytes())
+    embassy = qb.EmbassyBridge(sw, sink, expected_qseed=QSEED, source=src)
+    verdict = embassy.run(verify_timeout=5.0, relay_secs=0.0)
+
+    assert verdict["joined"] is True
+    assert verdict["agent_id"] == f"qos-{QSEED.lower()}"
+    assert verdict["attestation"]["ok"] is True
+    assert verdict["attestation"]["qseed"] == QSEED
+    # 1) join argv with the qseed-derived agent-id, 2) leave argv on teardown.
+    assert ["kannaka.exe", "swarm", "join", "--agent-id", f"qos-{QSEED.lower()}"] in calls
+    assert ["kannaka.exe", "swarm", "leave"] in calls
+    # The attestation credential reached the (real) sink only after the join.
+    attests = [e for e in sink.events if e["subject"].endswith(".attest")]
+    assert len(attests) == 1 and attests[0]["payload"]["ok"] is True
+
+
+def test_embassy_refuses_to_join_on_invalid_attestation():
+    sink = qb.CaptureSink()
+    sw, calls = _fake_swarm(agent_id="qos-should-not-join")
+    src = _BytesSource(_bitflip_first_sig(QSEED_CAP.read_bytes()))
+    embassy = qb.EmbassyBridge(sw, sink, expected_qseed=QSEED, source=src)
+    verdict = embassy.run(verify_timeout=5.0, relay_secs=0.0)
+
+    assert verdict["joined"] is False
+    assert "public key" in (verdict["refused"] or "")
+    # No join (nor leave) argv was ever constructed — presence needs a real boot.
+    assert not any("join" in argv for argv in calls)
+    assert not any("leave" in argv for argv in calls)
+    # And the unverified node published NO credential (the gated sink dropped it).
+    assert sink.events == []
+
+
+def test_embassy_entrypoint_raises_on_invalid_via_file_source(tmp_path):
+    bad = tmp_path / "bad_com2.bin"
+    bad.write_bytes(_bitflip_first_sig(QSEED_CAP.read_bytes()))
+    # nats=False keeps it off the mesh; the refusal happens BEFORE any join, so
+    # no swarm daemon is ever spawned.
+    with pytest.raises(RuntimeError, match="refused"):
+        qb.qos_bridge_embassy(
+            source="file", path=str(bad), expected_qseed=QSEED,
+            nats=False, detach=True, verify_timeout=5.0,
+        )

@@ -1309,7 +1309,7 @@ set -e
 export PATH="$HOME/.local/bin:$PATH"
 kernel=$(ls "$HOME"/QuantumOS/build/*/kernel.elf32 | head -1)
 tmux new-session -d -s @SESSION@ \
-  "export PATH=\\"$HOME/.local/bin:$PATH\\"; qemu-system-x86_64 -kernel $kernel @APPEND@ -serial stdio -m 128M -display none -vga none -nic none -no-reboot; echo; echo '[qemu exited]'; exec bash"
+  "export PATH=\\"$HOME/.local/bin:$PATH\\"; qemu-system-x86_64 -kernel $kernel @APPEND@ -serial stdio -serial file:/tmp/qos-com2-@SESSION@.log -m 128M -display none -vga none -nic none -no-reboot; echo; echo '[qemu exited]'; exec bash"
 sleep @SETTLE@
 tmux capture-pane -p -S -200 -t @SESSION@ | grep -v '^$' | tail -n 60
 """
@@ -1349,7 +1349,10 @@ echo "[novnc] ready: $HOME/noVNC"
 #: stay deferred to the instance; the kernel is self-discovered; @APPEND@/@VNCDISP@/
 #: @VNCPORT@/@WEBPORT@/@MONPORT@/@SESSION@/@SETTLE@ are substituted in Python. VGA
 #: framebuffer over VNC, started PAUSED (``-S``) with a TCP monitor so lab_qos_resume
-#: can ``cont`` it once the browser is attached; serial -> a file. The libasound /
+#: can ``cont`` it once the browser is attached. Two UARTs land in files: COM1
+#: (the boot console) -> /tmp/qosg-<session>.log, and COM2 (the ring-3 swarm_svc's
+#: signed attestation + swarm frames) -> /tmp/qos-com2-<session>.log, which
+#: lab_qos_swarm_bridge tails to join the mesh. The libasound /
 #: "multiboot knows VBE. we don't" warnings are NON-FATAL (VBE decline -> the
 #: kernel's VGA-text splash renders, which is the animation).
 _QOS_GRAPHICAL_LAUNCHER = """#!/bin/sh
@@ -1357,7 +1360,7 @@ export PATH="$HOME/.local/bin:$PATH"
 pkill -f "vnc 127.0.0.1:@VNCDISP@" 2>/dev/null || true
 pkill -f "noVNC @WEBPORT@" 2>/dev/null || true
 kernel=$(ls "$HOME"/QuantumOS/build/*/kernel.elf32 | head -1)
-nohup qemu-system-x86_64 -kernel "$kernel" @APPEND@ -vga std -vnc 127.0.0.1:@VNCDISP@ -S -monitor tcp:127.0.0.1:@MONPORT@,server,nowait -m 128M -nic none -no-reboot -serial file:/tmp/qosg-@SESSION@.log </dev/null >/tmp/qosg-@SESSION@-launch.log 2>&1 &
+nohup qemu-system-x86_64 -kernel "$kernel" @APPEND@ -vga std -vnc 127.0.0.1:@VNCDISP@ -S -monitor tcp:127.0.0.1:@MONPORT@,server,nowait -m 128M -nic none -no-reboot -serial file:/tmp/qosg-@SESSION@.log -serial file:/tmp/qos-com2-@SESSION@.log </dev/null >/tmp/qosg-@SESSION@-launch.log 2>&1 &
 nohup websockify --web "$HOME/noVNC" @WEBPORT@ 127.0.0.1:@VNCPORT@ </dev/null >/tmp/qosg-@SESSION@-ws.log 2>&1 &
 sleep @SETTLE@
 if pgrep -f "vnc 127.0.0.1:@VNCDISP@" >/dev/null; then
@@ -1541,6 +1544,7 @@ def lab_qos_boot(
             "vnc_display": vnc_display,
             "vnc_port": vnc_port,
             "monitor_port": int(monitor_port),
+            "com2_log": f"/tmp/qos-com2-{session}.log",
             "tail": [ln for ln in (gb.stdout or "").splitlines() if ln.strip()],
             "resume_hint": f"kannaka-quantum lab-watch --ssh-alias {ssh_alias} --session {session} "
             f"--web-port {int(web_port)} --monitor-port {int(monitor_port)}",
@@ -1569,6 +1573,7 @@ def lab_qos_boot(
         "session": session,
         "already_running": False,
         "booted": booted,
+        "com2_log": f"/tmp/qos-com2-{session}.log",
         "tail": lines,
         "attach": attach,
         "note": (
@@ -1676,3 +1681,89 @@ def lab_watch(
         "note": f"SSH -L tunnel open (pid {tunnel.pid}) + browser launched at vnc_lite.html; VM resumed (cont). "
         f"Stop watching by killing pid {tunnel.pid}.",
     }
+
+
+def _kannaka_nats_env() -> dict[str, str]:
+    """Load ``~/.kannaka-nats.env`` (``NATS_USER`` / ``NATS_PASSWORD``) and the
+    mesh URL as an environment overlay for the local kannaka swarm subprocesses.
+    Missing file is not fatal — kannaka may already have creds in its own env."""
+    env: dict[str, str] = {}
+    p = Path.home() / ".kannaka-nats.env"
+    if p.exists():
+        for line in p.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            env[k.strip()] = v.strip().strip('"').strip("'")
+    env.setdefault(
+        "KANNAKA_NATS_URL",
+        os.environ.get("KANNAKA_NATS_URL", "nats://swarm.ninja-portal.com:4222"),
+    )
+    return env
+
+
+def lab_qos_swarm_bridge(
+    ssh_alias: str,
+    session: str = "qos",
+    qseed: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    com2_path: Optional[str] = None,
+    verify_timeout: float = 25.0,
+    relay_secs: float = 8.0,
+    kannaka_bin: Optional[str] = None,
+) -> dict[str, Any]:
+    """Wire a booted QuantumOS instance onto the NATS swarm under its own
+    Lamport-signed identity — the Option B capstone of the ghostd/QuantumOS work
+    (#51; epic #47).
+
+    QuantumOS's ring-3 ``swarm_svc`` emits a signed boot attestation and swarm
+    frames on COM2, which :func:`lab_qos_boot` captures to
+    ``/tmp/qos-com2-<session>.log`` on the instance. This tails that log over the
+    repo's SSH mechanism (:class:`~kannaka_quantum.qos_bridge.SshTailByteSource`),
+    runs the embassy bridge LOCALLY (the local kannaka binary + the
+    ``~/.kannaka-nats.env`` creds against ``nats://swarm.ninja-portal.com:4222``),
+    *verifies* the attestation, and — **only if it verifies** — joins the swarm
+    as the node (``kannaka swarm join --agent-id <id>``), publishes the
+    attestation as the node's credential, and relays DATA. Peer-presence is thus
+    backed by a genuine signed boot; an invalid attestation is refused (raises).
+
+    Returns immediately with the *backgrounded* join daemon's ``join_pid`` (like
+    :func:`lab_watch`'s tunnel): the daemon keeps the node present in
+    ``kannaka swarm peers`` until you kill that pid (or ``kannaka swarm leave``).
+    ``qseed`` (the value the instance booted with) only derives the default
+    agent-id and asserts the attested qseed matches; the attestation carries the
+    real signed seed. Costs nothing beyond the instance's own per-minute bill and
+    the mesh connection — no provisioning, no QPU spend."""
+    from . import qos_bridge
+
+    com2 = com2_path or f"/tmp/qos-com2-{session}.log"
+    expected: Optional[str] = None
+    if qseed and qseed.lower() != "reservoir":
+        expected = qseed.lower().removeprefix("0x")
+    kbin = kannaka_bin or os.environ.get("KANNAKA_BIN") or "kannaka"
+    out = qos_bridge.qos_bridge_embassy(
+        source="ssh",
+        alias=ssh_alias,
+        path=com2,
+        agent_id=agent_id,
+        expected_qseed=expected,
+        nats=True,
+        kannaka_bin=kbin,
+        verify_timeout=verify_timeout,
+        relay_secs=relay_secs,
+        detach=True,
+        env=_kannaka_nats_env(),
+    )
+    out["ssh_alias"] = ssh_alias
+    out["session"] = session
+    out["com2_log"] = com2
+    out["verify"] = "kannaka swarm peers   # the agent_id below should appear"
+    out["stop"] = f"kill {out.get('join_pid')}   # or: kannaka swarm leave"
+    out["note"] = (
+        f"QuantumOS joined the swarm as '{out.get('agent_id')}' behind a verified boot "
+        f"attestation (qseed={out.get('attestation', {}).get('qseed')}). Confirm with "
+        f"`kannaka swarm peers`; the join daemon (pid {out.get('join_pid')}) holds presence "
+        f"until killed."
+    )
+    return out

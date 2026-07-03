@@ -349,6 +349,28 @@ def build_parser() -> argparse.ArgumentParser:
     qbr.add_argument("--timeout", type=float, default=15.0, help="stream/await window in seconds")
     qbr.add_argument("--kannaka-bin", default=None, help="path to the kannaka binary (NATS sink)")
     qbr.add_argument("--target", default="all", help="inbox target for published qos events (default: all)")
+    qbr.add_argument("--join-swarm", action="store_true",
+                     help="embassy mode: verify the attestation, then join the swarm as the node "
+                          "(kannaka swarm join --agent-id), publish the credential, relay DATA, leave on exit")
+    qbr.add_argument("--agent-id", default=None,
+                     help="swarm agent-id for embassy mode (default: qos-<qseed16> derived from the attestation)")
+    qbr.add_argument("--detach", action="store_true",
+                     help="embassy mode: leave the join daemon running and return its pid (don't leave on exit)")
+    qbr.add_argument("--relay-secs", type=float, default=8.0, help="embassy DATA-relay window in seconds")
+
+    qsb = sub.add_parser(
+        "lab-qos-swarm-bridge",
+        help="wire a booted QuantumOS instance onto the NATS swarm under its signed identity (tails COM2 over SSH)",
+    )
+    qsb.add_argument("--ssh-alias", required=True)
+    qsb.add_argument("--session", default="qos")
+    qsb.add_argument("--qseed", default=None,
+                     help="qseed the instance booted with ('reservoir'/hex): derives the default agent-id + asserts the attested qseed")
+    qsb.add_argument("--agent-id", default=None, help="override the swarm agent-id (default: qos-<qseed16>)")
+    qsb.add_argument("--com2-path", default=None, help="remote COM2 log path (default: /tmp/qos-com2-<session>.log)")
+    qsb.add_argument("--verify-timeout", type=float, default=25.0)
+    qsb.add_argument("--relay-secs", type=float, default=8.0)
+    qsb.add_argument("--kannaka-bin", default=None, help="path to the local kannaka binary (default: 'kannaka' on PATH)")
 
     sub.add_parser("mcp", help="launch the MCP server (stdio)")
     return p
@@ -478,6 +500,17 @@ def _dispatch_lab(args) -> Optional[dict]:
         )
     if cmd == "lab-qos-resume":
         return lab.lab_qos_resume(args.ssh_alias, monitor_port=args.monitor_port)
+    if cmd == "lab-qos-swarm-bridge":
+        return lab.lab_qos_swarm_bridge(
+            args.ssh_alias,
+            session=args.session,
+            qseed=args.qseed,
+            agent_id=args.agent_id,
+            com2_path=args.com2_path,
+            verify_timeout=args.verify_timeout,
+            relay_secs=args.relay_secs,
+            kannaka_bin=args.kannaka_bin,
+        )
     return None
 
 
@@ -582,7 +615,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         elif args.cmd == "qos-bridge":
             from . import qos_bridge
 
-            if args.once and args.source == "file":
+            if args.join_swarm:
+                out = qos_bridge.qos_bridge_embassy(
+                    source=args.source, path=args.path, host=args.host, port=args.port,
+                    alias=args.alias, agent_id=args.agent_id, node=args.node,
+                    expected_qseed=args.qseed, nats=args.nats, kannaka_bin=args.kannaka_bin,
+                    target=args.target, verify_timeout=args.timeout, relay_secs=args.relay_secs,
+                    detach=args.detach,
+                )
+            elif args.once and args.source == "file":
                 # Pure one-shot verify of a completed capture (also publishes if
                 # --nats): read the file, verify, and relay the one attestation.
                 out = qos_bridge.qos_bridge_relay(

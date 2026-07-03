@@ -1,0 +1,2 @@
+# QuantumOS COM2 golden captures — raw bytes, never touch line endings.
+tests/fixtures/*.bin binary

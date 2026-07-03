@@ -326,6 +326,30 @@ def build_parser() -> argparse.ArgumentParser:
     sb.add_argument("--token", default=None)
     sb.add_argument("--ping-interval", type=float, default=30.0)
 
+    qbr = sub.add_parser(
+        "qos-bridge",
+        help="bridge a QuantumOS COM2 stream (boot attestation + swarm frames) to the kannaka NATS mesh",
+    )
+    qbr.add_argument("--source", choices=["file", "tcp", "ssh"], default="file",
+                     help="COM2 byte source (default: file — a QEMU -serial file: capture)")
+    qbr.add_argument("--path", default=None,
+                     help="capture file path (file), or remote COM2 log path (ssh)")
+    qbr.add_argument("--host", default=None, help="COM2 TCP host (tcp source)")
+    qbr.add_argument("--port", type=int, default=None, help="COM2 TCP port (tcp source)")
+    qbr.add_argument("--alias", default=None, help="instance SSH alias (ssh source)")
+    qbr.add_argument("--qseed", default=None,
+                     help="expected qseed hex, 'none' for a seedless boot, or omit to skip the qseed check")
+    qbr.add_argument("--node", default=None, help="node id for the KANNAKA.qos.<node>.* subjects")
+    qbr.add_argument("--nats", dest="nats", action="store_true", default=True,
+                     help="publish to the NATS mesh (default)")
+    qbr.add_argument("--no-nats", dest="nats", action="store_false",
+                     help="do not publish; count events only")
+    qbr.add_argument("--once", action="store_true",
+                     help="verify one attestation and exit (vs stream and relay)")
+    qbr.add_argument("--timeout", type=float, default=15.0, help="stream/await window in seconds")
+    qbr.add_argument("--kannaka-bin", default=None, help="path to the kannaka binary (NATS sink)")
+    qbr.add_argument("--target", default="all", help="inbox target for published qos events (default: all)")
+
     sub.add_parser("mcp", help="launch the MCP server (stdio)")
     return p
 
@@ -555,6 +579,24 @@ def main(argv: Optional[list[str]] = None) -> int:
             )
             print(json.dumps(result))
             return code
+        elif args.cmd == "qos-bridge":
+            from . import qos_bridge
+
+            if args.once and args.source == "file":
+                # Pure one-shot verify of a completed capture (also publishes if
+                # --nats): read the file, verify, and relay the one attestation.
+                out = qos_bridge.qos_bridge_relay(
+                    source="file", path=args.path, node=args.node,
+                    expected_qseed=args.qseed, nats=args.nats, once=True,
+                    timeout=args.timeout, kannaka_bin=args.kannaka_bin, target=args.target,
+                )
+            else:
+                out = qos_bridge.qos_bridge_relay(
+                    source=args.source, path=args.path, host=args.host, port=args.port,
+                    alias=args.alias, node=args.node, expected_qseed=args.qseed,
+                    nats=args.nats, once=args.once, timeout=args.timeout,
+                    kannaka_bin=args.kannaka_bin, target=args.target,
+                )
         elif args.cmd == "mcp":
             from .mcp_server import run_stdio
 

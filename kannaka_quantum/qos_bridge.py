@@ -44,6 +44,7 @@ import shlex
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -510,24 +511,38 @@ class TcpByteSource(ByteSource):
 
 
 class SshTailByteSource(ByteSource):
-    """Receive-only COM2 stream tailed over SSH from a leased instance.
+    """Receive-only COM2 stream read over SSH from a leased instance.
 
-    Runs ``tail -c +1 -f <remote_path>`` on the instance and reads the COM2 bytes
-    off SSH stdout. Reuses the repo's SSH discipline from :mod:`lab` (the
-    System32-OpenSSH resolver + pinned-known_hosts options — the Windows path
-    gotcha that ``lab.py`` already solves). One-way: attestation verification and
-    inbound relay only (the guest's COM2 file is not writable back over tail).
+    With ``follow=False`` (the default, and what the embassy uses) it runs
+    ``tail -c +1 <remote_path>`` — reads the whole COM2 log once and EXITS. The
+    boot attestation is a one-shot blob already sitting in the file by the time
+    the bridge runs (the /qos flow joins the swarm *after* boot), so a
+    terminating read is both sufficient and reliable: it flushes every byte when
+    the command closes. A *following* ``tail -f`` is NOT used for the attestation
+    because, over qBraid's websocket ``ProxyCommand``, the initial bytes get
+    block-buffered and never flush while ``-f`` holds the stream open — the
+    stream looks empty and the embassy times out (observed live 2026-07-03).
+
+    With ``follow=True`` it runs ``tail -c +1 -f`` for ongoing DATA relay.
+
+    Reuses the repo's SSH discipline from :mod:`lab` (the System32-OpenSSH
+    resolver + pinned-known_hosts). One-way: attestation verification and inbound
+    relay only (the guest's COM2 file is not writable back over tail). ``stderr``
+    is captured (not discarded) so an SSH failure surfaces a real reason instead
+    of a misleading "no attestation" timeout.
     """
 
     two_way = False
 
-    def __init__(self, ssh_alias: str, remote_path: str) -> None:
+    def __init__(self, ssh_alias: str, remote_path: str, follow: bool = False) -> None:
         # Import lazily so the pure codec/verify layers don't drag in lab.py
         # (and its qbraid deps) for callers that only parse bytes.
         from . import lab
 
         self.ssh_alias = ssh_alias
         self.remote_path = remote_path
+        self.follow = follow
+        remote_cmd = f"tail -c +1 {'-f ' if follow else ''}{shlex.quote(remote_path)}"
         argv = [
             lab._ssh_exe(),
             "-o", "BatchMode=yes",
@@ -535,10 +550,13 @@ class SshTailByteSource(ByteSource):
             "-o", f"UserKnownHostsFile={lab._known_hosts_path()}",
             "-o", f"HostKeyAlias={ssh_alias}",
             ssh_alias,
-            "bash -lc " + shlex.quote(f"tail -c +1 -f {shlex.quote(remote_path)}"),
+            "bash -lc " + shlex.quote(remote_cmd),
         ]
+        # stderr → a temp file (not DEVNULL): drained on demand so a connect
+        # failure is diagnosable, without risking a PIPE deadlock on a full buffer.
+        self._stderr = tempfile.TemporaryFile()
         self._proc = subprocess.Popen(
-            argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL
+            argv, stdout=subprocess.PIPE, stderr=self._stderr, stdin=subprocess.DEVNULL
         )
 
     def read(self, max_bytes: int = 4096, timeout: Optional[float] = None) -> bytes:
@@ -547,9 +565,21 @@ class SshTailByteSource(ByteSource):
             else self._proc.stdout.read(max_bytes)
         return data or b""
 
+    def stderr_text(self) -> str:
+        """Captured SSH stderr, for diagnosing a failed connect (empty on success)."""
+        try:
+            self._stderr.seek(0)
+            return self._stderr.read().decode("utf-8", "replace").strip()
+        except Exception:
+            return ""
+
     def close(self) -> None:
         try:
             self._proc.terminate()
+        except Exception:
+            pass
+        try:
+            self._stderr.close()
         except Exception:
             pass
 
@@ -949,6 +979,11 @@ class EmbassyBridge:
                 break
         if not self._decided:
             self.refused = f"no boot attestation received within {verify_timeout:.0f}s"
+            # If the source is an SSH read that failed to connect, its stderr is
+            # the real reason — surface it instead of a misleading timeout.
+            err = getattr(self.source, "stderr_text", lambda: "")()
+            if err:
+                self.refused += f" (ssh: {err.splitlines()[-1][:160]})"
         return self.verdict()
 
     def relay(self, duration: float = 8.0) -> None:
@@ -1017,7 +1052,7 @@ def _make_source(source: str, path: Optional[str], host: Optional[str],
     if source == "ssh":
         if not alias or not path:
             raise RuntimeError("--source ssh needs --alias and --path (remote COM2 log path)")
-        return SshTailByteSource(alias, path)
+        return SshTailByteSource(alias, path, follow=follow)
     raise RuntimeError(f"unknown source {source!r} (want file|tcp|ssh)")
 
 
@@ -1094,7 +1129,11 @@ def qos_bridge_embassy(
     ``kannaka swarm peers`` (``confirm``), and returns the *backgrounded* join
     handle (``join_pid``) WITHOUT leaving, so the node stays present on the mesh.
     ``env`` overlays the kannaka subprocess environment (NATS creds + URL)."""
-    src = _make_source(source, path, host, port, alias, follow=True)
+    # The attestation is a one-shot blob already in the COM2 log by the time the
+    # embassy runs (the /qos flow joins *after* boot). A terminating read
+    # (follow=False) reliably flushes it; a following tail -f block-buffers over
+    # qBraid's websocket ProxyCommand and never delivers (observed live).
+    src = _make_source(source, path, host, port, alias, follow=False)
     sink = _make_sink(nats, kannaka_bin, target)
     swarm = KannakaSwarm(agent_id=agent_id, kannaka_bin=kannaka_bin, env=env or {})
     embassy = EmbassyBridge(swarm, sink, node=node, expected_qseed=expected_qseed, source=src)

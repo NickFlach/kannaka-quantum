@@ -235,6 +235,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     tp = sub.add_parser("lab-terminate-instance", help="TERMINATE an instance (frees disk, stops ALL billing)")
     tp.add_argument("--instance-id", required=True)
+    # Teardown STOPS spend, so it needs no spend gate — but accept (and ignore)
+    # the spend flags so a caller that reflexively passes them can never have a
+    # teardown fail on "unrecognized arguments" and leave an instance billing.
+    _add_lab_spend_opts(tp)
 
     rp = sub.add_parser("lab-reap", help="stop instances/servers past their lease (cron/timer-friendly)")
     rp.add_argument("--dry-run", action="store_true", help="report what would be stopped/terminated without doing it")

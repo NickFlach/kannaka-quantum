@@ -446,3 +446,38 @@ def test_embassy_entrypoint_raises_on_invalid_via_file_source(tmp_path):
             source="file", path=str(bad), expected_qseed=QSEED,
             nats=False, detach=True, verify_timeout=5.0,
         )
+
+
+def _capture_ssh_argv(monkeypatch, **kwargs):
+    """Build an SshTailByteSource with Popen mocked, returning the remote-command
+    string it would have run (no ssh ever spawns)."""
+    import io
+
+    captured = {}
+
+    class _FakePopen:
+        def __init__(self, argv, **_):
+            captured["argv"] = argv
+            self.stdout = io.BytesIO(b"")
+
+        def terminate(self):
+            pass
+
+    monkeypatch.setattr(qb.subprocess, "Popen", _FakePopen)
+    src = qb.SshTailByteSource("qbraid-bma-x", "/tmp/qos-com2-qos.log", **kwargs)
+    src.close()
+    return captured["argv"][-1]  # the `bash -lc '<remote cmd>'` argument
+
+
+def test_ssh_source_default_is_non_following(monkeypatch):
+    # Regression: the embassy read MUST be a terminating `tail -c +1` (not -f).
+    # A following tail block-buffers over qBraid's websocket ProxyCommand and
+    # never delivers the already-written attestation (observed live 2026-07-03).
+    remote = _capture_ssh_argv(monkeypatch)  # follow defaults to False
+    assert "tail -c +1" in remote
+    assert "-f" not in remote
+
+
+def test_ssh_source_follow_true_streams(monkeypatch):
+    remote = _capture_ssh_argv(monkeypatch, follow=True)
+    assert "tail -c +1 -f" in remote

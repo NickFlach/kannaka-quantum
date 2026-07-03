@@ -37,6 +37,11 @@ from .lab import (
     lab_exec,
     lab_qos_boot,
 )
+from .qos_bridge import (
+    qos_bridge_relay,
+    qos_bridge_verify,
+    verify_attestation,
+)
 
 __all__ = [
     "DEFAULT_DEVICE",
@@ -68,5 +73,9 @@ __all__ = [
     "lab_agent_setup",
     "lab_exec",
     "lab_qos_boot",
+    # QuantumOS <-> NATS swarm bridge
+    "qos_bridge_relay",
+    "qos_bridge_verify",
+    "verify_attestation",
 ]
 __version__ = "0.2.10"

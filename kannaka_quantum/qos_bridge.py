@@ -747,6 +747,257 @@ class QosBridge:
 
 
 # --------------------------------------------------------------------------- #
+# Embassy mode — QuantumOS joins the mesh under its own signed identity
+# --------------------------------------------------------------------------- #
+def default_agent_id(qseed_hex: Optional[str]) -> str:
+    """The default swarm agent-id for a node booted with ``qseed_hex``:
+    ``qos-<hex16>`` (matching :meth:`QosBridge._node_id`), or ``qos-node`` for a
+    seedless boot / unknown qseed."""
+    if qseed_hex and qseed_hex.lower() != "none":
+        return f"qos-{qseed_hex[:16].lower()}"
+    return "qos-node"
+
+
+class KannakaSwarm:
+    """Join/leave the kannaka NATS swarm under a QuantumOS node's identity by
+    shelling to the kannaka binary.
+
+    NOTE (deviation, documented in the PR): ``kannaka swarm join`` is a
+    long-lived foreground daemon — it holds the membership and heartbeats every
+    30s, leaving cleanly on Ctrl+C. So presence in ``kannaka swarm peers`` means
+    a *running* join process; the embassy therefore *spawns* the join (Popen,
+    ``spawn``) and keeps it alive, rather than running it to completion. The
+    short-lived ``leave``/``peers`` calls go through ``run`` (subprocess.run).
+    Both are injectable exactly like :class:`KannakaCliSink`'s ``runner`` so the
+    join/leave argv is unit-testable with no live mesh. On teardown the real
+    clean-leave is terminating the daemon (≈ its Ctrl+C); the ``swarm leave``
+    call is a best-effort belt-and-suspenders whose argv the tests assert."""
+
+    def __init__(
+        self,
+        agent_id: Optional[str] = None,
+        kannaka_bin: Optional[str] = None,
+        env: Optional[dict[str, str]] = None,
+        spawn=None,
+        run=None,
+        timeout: float = 20.0,
+    ) -> None:
+        self.agent_id = agent_id
+        self.kannaka_bin = kannaka_bin or _default_kannaka_bin()
+        self.env = env or {}
+        self.timeout = timeout
+        self._spawn = spawn or self._default_spawn
+        self._run = run or self._default_run
+        self._proc = None
+        self.joined = False
+
+    # -- argv (pure; the unit-test surface) --------------------------------- #
+    def join_argv(self) -> list[str]:
+        return [self.kannaka_bin, "swarm", "join", "--agent-id", self.agent_id]
+
+    def leave_argv(self) -> list[str]:
+        return [self.kannaka_bin, "swarm", "leave"]
+
+    def peers_argv(self) -> list[str]:
+        return [self.kannaka_bin, "swarm", "peers"]
+
+    # -- default runners (env-injecting; overridden in tests) --------------- #
+    def _merged_env(self) -> dict[str, str]:
+        merged = dict(os.environ)
+        merged.update(self.env)
+        return merged
+
+    def _default_spawn(self, argv: list[str]):
+        return subprocess.Popen(
+            argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL, env=self._merged_env(),
+        )
+
+    def _default_run(self, argv: list[str]):
+        return subprocess.run(
+            argv, capture_output=True, text=True, timeout=self.timeout, env=self._merged_env(),
+        )
+
+    # -- lifecycle ---------------------------------------------------------- #
+    def join(self) -> None:
+        """Start the join daemon (must have an ``agent_id`` set)."""
+        if self.joined:
+            return
+        if not self.agent_id:
+            raise RuntimeError("KannakaSwarm.join needs an agent_id")
+        self._proc = self._spawn(self.join_argv())
+        self.joined = True
+
+    def leave(self) -> None:
+        """Best-effort ``swarm leave`` then terminate the join daemon."""
+        if not self.joined:
+            return
+        try:
+            self._run(self.leave_argv())
+        except Exception:
+            pass  # the daemon terminate below is the authoritative clean-leave
+        finally:
+            if self._proc is not None:
+                try:
+                    self._proc.terminate()
+                except Exception:
+                    pass
+            self.joined = False
+
+    def peers(self) -> str:
+        """Return ``kannaka swarm peers`` stdout (for presence confirmation)."""
+        r = self._run(self.peers_argv())
+        return getattr(r, "stdout", "") or ""
+
+    @property
+    def pid(self) -> Optional[int]:
+        return getattr(self._proc, "pid", None)
+
+
+class _GatedSink(NatsSink):
+    """Buffers events until released. The embassy holds every publish behind the
+    swarm join: nothing reaches the mesh until the boot attestation verifies and
+    the node has joined (:meth:`open`); on a bad attestation the buffer is
+    dropped (:meth:`drop`) so an unverified node never publishes a credential."""
+
+    def __init__(self, target: NatsSink) -> None:
+        self._target = target
+        self._buffer: list[tuple[str, dict[str, Any]]] = []
+        self._open = False
+
+    def publish(self, subject: str, payload: dict[str, Any]) -> None:
+        if self._open:
+            self._target.publish(subject, payload)
+        else:
+            self._buffer.append((subject, payload))
+
+    def open(self) -> None:
+        self._open = True
+        for subject, payload in self._buffer:
+            self._target.publish(subject, payload)
+        self._buffer.clear()
+
+    def drop(self) -> None:
+        self._buffer.clear()
+
+    def close(self) -> None:
+        self._target.close()
+
+
+class EmbassyBridge:
+    """QuantumOS's authenticated embassy on the NATS mesh (Option B capstone).
+
+    Wraps a :class:`QosBridge` whose publishing is *gated behind a swarm join*:
+    the embassy reads the COM2 stream and, on the first fully-received boot
+    attestation, verifies it. Only a VALID attestation lets QuantumOS join the
+    swarm (``kannaka swarm join --agent-id <id>``) — peer-presence is thereby
+    backed by a genuine signed boot; an INVALID attestation is *refused* (no
+    join, no credential published). Once joined it flushes the attestation as the
+    node's credential and relays DATA both ways; :meth:`leave` (or :meth:`run`'s
+    teardown) leaves the swarm.
+    """
+
+    def __init__(
+        self,
+        swarm: KannakaSwarm,
+        sink: NatsSink,
+        node: Optional[str] = None,
+        expected_qseed: Optional[str] = None,
+        source: Optional[ByteSource] = None,
+    ) -> None:
+        self.swarm = swarm
+        self._gated = _GatedSink(sink)
+        self.bridge = QosBridge(sink=self._gated, node=node, expected_qseed=expected_qseed, source=source)
+        self.source = source
+        self.joined = False
+        self.refused: Optional[str] = None
+        self._decided = False
+
+    def _decide(self) -> None:
+        """Once the attestation is fully received, join (valid) or refuse
+        (invalid). Runs exactly once."""
+        if self._decided or not self.bridge.attest_published:
+            return
+        self._decided = True
+        result = self.bridge.attest_result or {}
+        if result.get("ok"):
+            if not self.swarm.agent_id:
+                self.swarm.agent_id = self.bridge._node_id()
+            self.swarm.join()
+            self.joined = True
+            self._gated.open()   # flush the attestation credential to the mesh
+        else:
+            self.refused = result.get("reason") or "attestation did not verify"
+            self._gated.drop()   # unverified: never publish a credential
+
+    def _feed(self, chunk: bytes) -> None:
+        self.bridge.feed(chunk)
+        self._decide()
+
+    def establish(self, verify_timeout: float = 20.0) -> dict[str, Any]:
+        """Read the source until the attestation is decided (joined or refused).
+        Returns the verdict. Does NOT leave — the join daemon stays up."""
+        if self.source is None:
+            raise RuntimeError("EmbassyBridge.establish needs a source")
+        deadline = time.time() + verify_timeout
+        while time.time() < deadline and not self._decided:
+            chunk = self.source.read(4096, timeout=min(1.0, max(0.0, deadline - time.time())))
+            if chunk:
+                self._feed(chunk)
+            elif not self.source.two_way and not getattr(self.source, "follow", False):
+                self._decide()   # static capture exhausted
+                break
+        if not self._decided:
+            self.refused = f"no boot attestation received within {verify_timeout:.0f}s"
+        return self.verdict()
+
+    def relay(self, duration: float = 8.0) -> None:
+        """After :meth:`establish`, keep reading and relaying DATA for
+        ``duration`` seconds. No-op unless joined."""
+        if not self.joined or self.source is None:
+            return
+        deadline = time.time() + duration
+        while time.time() < deadline:
+            chunk = self.source.read(4096, timeout=min(1.0, max(0.0, deadline - time.time())))
+            if chunk:
+                self.bridge.feed(chunk)
+            elif not self.source.two_way and not getattr(self.source, "follow", False):
+                break
+
+    def leave(self) -> None:
+        if self.joined:
+            self.swarm.leave()
+            self.joined = False
+
+    def run(self, verify_timeout: float = 20.0, relay_secs: float = 8.0) -> dict[str, Any]:
+        """Bounded end-to-end: establish, relay, then leave — for a CLI
+        invocation that must not orphan the join daemon."""
+        try:
+            self.establish(verify_timeout=verify_timeout)
+            if self.joined:
+                self.relay(duration=relay_secs)
+            verdict = self.verdict()   # capture the outcome while still joined
+        finally:
+            self.leave()               # teardown flips current membership off
+        return verdict
+
+    def verdict(self) -> dict[str, Any]:
+        r = self.bridge.attest_result or {}
+        return {
+            "joined": self.joined,
+            "refused": self.refused,
+            "agent_id": self.swarm.agent_id,
+            "attestation": {
+                "ok": r.get("ok", False),
+                "qseed": r.get("attested_qseed"),
+                "ticks": r.get("ticks"),
+                "reason": r.get("reason", self.refused or ""),
+            },
+            "published": len(self.bridge.relayed),
+        }
+
+
+# --------------------------------------------------------------------------- #
 # Command entry points (JSON-dict returning, like the rest of the package)
 # --------------------------------------------------------------------------- #
 def _make_sink(nats: bool, kannaka_bin: Optional[str], target: str) -> NatsSink:
@@ -812,3 +1063,64 @@ def qos_bridge_relay(
     if isinstance(sink, NullSink):
         summary["would_publish"] = sink.count
     return summary
+
+
+def qos_bridge_embassy(
+    source: str = "ssh",
+    path: Optional[str] = None,
+    host: Optional[str] = None,
+    port: Optional[int] = None,
+    alias: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    node: Optional[str] = None,
+    expected_qseed: Optional[str] = None,
+    nats: bool = True,
+    kannaka_bin: Optional[str] = None,
+    target: str = "all",
+    verify_timeout: float = 20.0,
+    relay_secs: float = 8.0,
+    detach: bool = False,
+    confirm: bool = True,
+    env: Optional[dict[str, str]] = None,
+) -> dict[str, Any]:
+    """Embassy mode: verify the QuantumOS boot attestation and — only if it
+    verifies — join the swarm under the node's signed identity, publish the
+    attestation credential, and relay DATA. **Raises** if the attestation is
+    invalid (the embassy refuses to join).
+
+    ``detach=False`` (default) runs bounded: establish, relay for ``relay_secs``,
+    then leave — safe for a CLI invocation. ``detach=True`` (the /qos flow's
+    mode) joins, briefly relays, optionally confirms presence via
+    ``kannaka swarm peers`` (``confirm``), and returns the *backgrounded* join
+    handle (``join_pid``) WITHOUT leaving, so the node stays present on the mesh.
+    ``env`` overlays the kannaka subprocess environment (NATS creds + URL)."""
+    src = _make_source(source, path, host, port, alias, follow=True)
+    sink = _make_sink(nats, kannaka_bin, target)
+    swarm = KannakaSwarm(agent_id=agent_id, kannaka_bin=kannaka_bin, env=env or {})
+    embassy = EmbassyBridge(swarm, sink, node=node, expected_qseed=expected_qseed, source=src)
+    try:
+        if detach:
+            embassy.establish(verify_timeout=verify_timeout)
+            if not embassy.joined:
+                raise RuntimeError(f"embassy refused to join: {embassy.refused}")
+            embassy.relay(duration=relay_secs)
+            verdict = embassy.verdict()
+            verdict["join_pid"] = swarm.pid
+            verdict["detached"] = True
+            if confirm and nats:
+                try:
+                    peers = swarm.peers()
+                    verdict["joined_confirmed"] = (swarm.agent_id or "") in peers
+                except Exception as exc:  # confirmation is advisory, never fatal
+                    verdict["joined_confirmed"] = None
+                    verdict["confirm_error"] = str(exc)[:200]
+        else:
+            verdict = embassy.run(verify_timeout=verify_timeout, relay_secs=relay_secs)
+            if not embassy.joined and embassy.refused:
+                raise RuntimeError(f"embassy refused to join: {embassy.refused}")
+    finally:
+        src.close()
+        if not detach:
+            sink.close()   # a detached run leaves the daemon (and its sink) up
+    verdict["nats"] = nats
+    return verdict

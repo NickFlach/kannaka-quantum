@@ -307,6 +307,9 @@ def build_parser() -> argparse.ArgumentParser:
     qb.add_argument("--timeout-secs", type=int, default=540)
     qb.add_argument("--qseed", default=None,
                     help="kernel boot entropy: 'reservoir' (draw 64 raw QPU bits locally) or <=16 hex digits")
+    qb.add_argument("--network", action="store_true",
+                    help="boot with an rtl8139 NIC on QEMU user-net (SLIRP) so QuantumOS runs its "
+                         "full network stack — DHCP/DNS self-test + the ring-3 nslookup/udping/http shell")
     qb.add_argument("--graphical", action="store_true",
                     help="boot with a VGA framebuffer over VNC (paused) + install noVNC; watch with lab-watch")
     qb.add_argument("--web-port", type=int, default=lab.QOS_DEFAULT_WEB_PORT, help="websockify web port for --graphical")
@@ -489,6 +492,7 @@ def _dispatch_lab(args) -> Optional[dict]:
             timeout_secs=args.timeout_secs,
             qseed=args.qseed,
             graphical=args.graphical,
+            network=args.network,
             web_port=args.web_port,
             monitor_port=args.monitor_port,
         )

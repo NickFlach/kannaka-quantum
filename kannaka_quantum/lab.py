@@ -1299,17 +1299,27 @@ ls "$HOME"/QuantumOS/build/*/kernel.elf32 >/dev/null
 echo "[build] ok"
 """
 
+#: QEMU NIC arguments. The default keeps the rootless install's firmware needs
+#: minimal (seabios + multiboot option ROMs only). ``network=True`` adds the
+#: rtl8139 on QEMU user-mode networking (SLIRP) so QuantumOS runs its full net
+#: stack — ARP/DHCP/ICMP/DNS self-test and the ring-3 UDP/TCP clients (the
+#: shell's ``nslookup``/``udping``/``http``). SLIRP is rootless (no tun/tap) and
+#: gives the guest NAT to the instance's real internet. ``romfile=`` skips the
+#: rtl8139 PXE option ROM (which the minimal firmware set may not stage) — the
+#: kernel boots via ``-kernel`` Multiboot, so the ROM is never needed.
+_QOS_NIC_NONE = "-nic none"
+_QOS_NIC_NET = "-netdev user,id=n0 -device rtl8139,netdev=n0,romfile="
+
 #: Boot inside a detached tmux session so the QEMU serial console outlives
 #: this call and any watcher window. ``exec bash`` keeps the pane alive after
-#: QEMU exits so a crash's last output stays readable. ``-nic none -vga none``
-#: keeps the rootless install's firmware needs down to seabios + the
-#: multiboot/linuxboot option ROMs.
+#: QEMU exits so a crash's last output stays readable. ``-vga none`` + the NIC
+#: choice (see @NIC@ / _QOS_NIC_*) bound the rootless install's firmware needs.
 _QOS_BOOT_SCRIPT = """
 set -e
 export PATH="$HOME/.local/bin:$PATH"
 kernel=$(ls "$HOME"/QuantumOS/build/*/kernel.elf32 | head -1)
 tmux new-session -d -s @SESSION@ \
-  "export PATH=\\"$HOME/.local/bin:$PATH\\"; qemu-system-x86_64 -kernel $kernel @APPEND@ -serial stdio -serial file:/tmp/qos-com2-@SESSION@.log -m 128M -display none -vga none -nic none -no-reboot; echo; echo '[qemu exited]'; exec bash"
+  "export PATH=\\"$HOME/.local/bin:$PATH\\"; qemu-system-x86_64 -kernel $kernel @APPEND@ -serial stdio -serial file:/tmp/qos-com2-@SESSION@.log -m 128M -display none -vga none @NIC@ -no-reboot; echo; echo '[qemu exited]'; exec bash"
 sleep @SETTLE@
 tmux capture-pane -p -S -200 -t @SESSION@ | grep -v '^$' | tail -n 60
 """
@@ -1360,7 +1370,7 @@ export PATH="$HOME/.local/bin:$PATH"
 pkill -f "vnc 127.0.0.1:@VNCDISP@" 2>/dev/null || true
 pkill -f "noVNC @WEBPORT@" 2>/dev/null || true
 kernel=$(ls "$HOME"/QuantumOS/build/*/kernel.elf32 | head -1)
-nohup qemu-system-x86_64 -kernel "$kernel" @APPEND@ -vga std -vnc 127.0.0.1:@VNCDISP@ -S -monitor tcp:127.0.0.1:@MONPORT@,server,nowait -m 128M -nic none -no-reboot -serial file:/tmp/qosg-@SESSION@.log -serial file:/tmp/qos-com2-@SESSION@.log </dev/null >/tmp/qosg-@SESSION@-launch.log 2>&1 &
+nohup qemu-system-x86_64 -kernel "$kernel" @APPEND@ -vga std -vnc 127.0.0.1:@VNCDISP@ -S -monitor tcp:127.0.0.1:@MONPORT@,server,nowait -m 128M @NIC@ -no-reboot -serial file:/tmp/qosg-@SESSION@.log -serial file:/tmp/qos-com2-@SESSION@.log </dev/null >/tmp/qosg-@SESSION@-launch.log 2>&1 &
 nohup websockify --web "$HOME/noVNC" @WEBPORT@ 127.0.0.1:@VNCPORT@ </dev/null >/tmp/qosg-@SESSION@-ws.log 2>&1 &
 sleep @SETTLE@
 if pgrep -f "vnc 127.0.0.1:@VNCDISP@" >/dev/null; then
@@ -1402,12 +1412,21 @@ def lab_qos_boot(
     timeout_secs: int = 540,
     qseed: Optional[str] = None,
     graphical: bool = False,
+    network: bool = False,
     web_port: int = QOS_DEFAULT_WEB_PORT,
     monitor_port: int = QOS_DEFAULT_MONITOR_PORT,
 ) -> dict[str, Any]:
     """Boot QuantumOS in QEMU on a provisioned instance, inside a detached
     tmux session, and return the serial-console tail (the kernel prints
     "QuantumOS ready" when it reaches the idle loop, then timer ticks).
+
+    ``network=True`` boots with an rtl8139 NIC on QEMU user-mode networking
+    (SLIRP — rootless, no tun/tap, NAT to the instance's real internet), so
+    QuantumOS runs its full network stack: the boot self-test does ARP → DHCP →
+    ICMP → DNS, and the ring-3 shell gains a working ``nslookup`` / ``udping`` /
+    ``http`` (the TCP client fetches real web pages). The default stays NIC-less
+    (the minimal-firmware display-demo contract); networking is opt-in and
+    composes with ``graphical`` and ``qseed``.
 
     ``graphical=True`` boots with a real VGA framebuffer over VNC instead of the
     text serial console: QEMU comes up PAUSED (``-S``) with ``-vga std -vnc`` and
@@ -1519,6 +1538,7 @@ def lab_qos_boot(
             raise RuntimeError(f"noVNC/websockify install failed (rc={nv.returncode}): {nverr or nvout}"[:1200])
         launcher = (
             _QOS_GRAPHICAL_LAUNCHER.replace("@APPEND@", f"-append qseed={qseed_hex}" if qseed_hex else "")
+            .replace("@NIC@", _QOS_NIC_NET if network else _QOS_NIC_NONE)
             .replace("@VNCDISP@", str(vnc_display))
             .replace("@VNCPORT@", str(vnc_port))
             .replace("@WEBPORT@", str(int(web_port)))
@@ -1538,6 +1558,7 @@ def lab_qos_boot(
             "session": session,
             "already_running": False,
             "graphical": True,
+            "network": network,
             "paused": True,  # started with -S; lab_watch resumes it (cont) once the browser is attached
             "booted": False,
             "novnc_web_port": int(web_port),
@@ -1561,6 +1582,7 @@ def lab_qos_boot(
         _QOS_BOOT_SCRIPT.replace("@SESSION@", session)
         .replace("@SETTLE@", "4")
         .replace("@APPEND@", f"-append qseed={qseed_hex}" if qseed_hex else "")
+        .replace("@NIC@", _QOS_NIC_NET if network else _QOS_NIC_NONE)
     )
     b = _remote_ssh_sh(ssh_alias, boot, timeout=60)
     if b.returncode != 0:
@@ -1573,6 +1595,7 @@ def lab_qos_boot(
         "session": session,
         "already_running": False,
         "booted": booted,
+        "network": network,
         "com2_log": f"/tmp/qos-com2-{session}.log",
         "tail": lines,
         "attach": attach,

@@ -425,6 +425,97 @@ def test_qos_boot_happy_path_reports_ready(_isolated_leases, monkeypatch):
     assert "flaukowski/QuantumOS" in prep and "make -C" in prep
 
 
+def test_qos_boot_default_is_nic_less(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 1, "", ""),
+        ("tmux new-session", 0, "[BOOT] QuantumOS ready\n", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_qos_boot("alias-qos")
+    boot = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
+    assert "-nic none" in boot and "rtl8139" not in boot  # display-demo default
+    assert out["network"] is False
+
+
+def test_qos_boot_network_adds_rtl8139_on_slirp(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 1, "", ""),
+        ("tmux new-session", 0, "[BOOT] NET: DHCP lease 10.0.2.15\nQuantumOS ready\n", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_qos_boot("alias-qos", network=True)
+    boot = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
+    # rtl8139 on user-mode networking, PXE ROM skipped, and NOT -nic none.
+    assert "-netdev user,id=n0" in boot and "-device rtl8139,netdev=n0,romfile=" in boot
+    assert "-nic none" not in boot
+    assert out["network"] is True
+
+
+def test_qos_boot_quiet_adds_kernel_quiet_token(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 1, "", ""),
+        ("tmux new-session", 0, "QuantumOS ready\n", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_qos_boot("alias-qos", quiet=True)
+    boot = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
+    assert "-append quiet" in boot
+    assert out["quiet"] is True
+
+
+def test_qos_boot_network_and_quiet_compose(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 1, "", ""),
+        ("tmux new-session", 0, "QuantumOS ready\n", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_qos_boot("alias-qos", network=True, quiet=True, qseed="dead")
+    boot = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
+    # qseed + quiet ride the SAME -append; the NIC rides alongside.
+    assert "-append qseed=dead quiet" in boot
+    assert "-device rtl8139,netdev=n0,romfile=" in boot
+    assert out["network"] is True and out["quiet"] is True
+
+
+def test_qos_boot_default_has_no_append(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 1, "", ""),
+        ("tmux new-session", 0, "QuantumOS ready\n", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    lab.lab_qos_boot("alias-qos")
+    boot = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
+    assert "-append" not in boot  # default boot line unchanged
+
+
+def test_qos_boot_graphical_network_adds_rtl8139(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 1, "", ""),
+        ("base64 -d", 0, "[graphical] qemu PAUSED", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_qos_boot("alias-qos", graphical=True, network=True)
+    # The graphical launcher is delivered base64-encoded; decode it and confirm
+    # the NIC flags rode through into the VGA/VNC boot.
+    gboot = next(c for _, c, _ in sh.calls if "base64 -d" in c)
+    m = re.search(r"printf '%s' ([A-Za-z0-9+/=]+) \| base64 -d", gboot)
+    launcher = base64.b64decode(m.group(1)).decode()
+    assert "-device rtl8139,netdev=n0,romfile=" in launcher and "-nic none" not in launcher
+    assert out["network"] is True and out["graphical"] is True
+
+
 def test_qos_boot_existing_session_reported_not_clobbered(_isolated_leases, monkeypatch):
     lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
                        "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})

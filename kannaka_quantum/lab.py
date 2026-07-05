@@ -1413,12 +1413,19 @@ def lab_qos_boot(
     qseed: Optional[str] = None,
     graphical: bool = False,
     network: bool = False,
+    quiet: bool = False,
     web_port: int = QOS_DEFAULT_WEB_PORT,
     monitor_port: int = QOS_DEFAULT_MONITOR_PORT,
 ) -> dict[str, Any]:
     """Boot QuantumOS in QEMU on a provisioned instance, inside a detached
     tmux session, and return the serial-console tail (the kernel prints
     "QuantumOS ready" when it reaches the idle loop, then timer ticks).
+
+    ``quiet=True`` adds the kernel ``quiet`` boot token, which silences the
+    demo kernel's steady-state console chatter (the per-second timer-tick
+    heartbeat and the paradoxd/ghostd service narration) so the interactive
+    ``qsh`` prompt isn't buried — ideal paired with ``network=True`` for a
+    clean, usable networked shell. The system is otherwise unchanged.
 
     ``network=True`` boots with an rtl8139 NIC on QEMU user-mode networking
     (SLIRP — rootless, no tun/tap, NAT to the instance's real internet), so
@@ -1472,6 +1479,17 @@ def lab_qos_boot(
                     f"lab_qos_boot: qseed must be 'reservoir' or up to 16 hex digits, got '{qseed}'"
                 )
             qseed_hex = s
+
+    # Compose the kernel command line: qseed (entropy) and/or quiet (silence
+    # the steady-state console chatter). Empty string when neither is set, so
+    # the default boot line is byte-for-byte unchanged.
+    _append_tokens = []
+    if qseed_hex:
+        _append_tokens.append(f"qseed={qseed_hex}")
+    if quiet:
+        _append_tokens.append("quiet")
+    append_arg = ("-append " + " ".join(_append_tokens)) if _append_tokens else ""
+
     lease = _lease_for_alias(ssh_alias)
     if not allow_unleased and (lease is None or lease.get("status") != "active"):
         raise RuntimeError(
@@ -1537,7 +1555,7 @@ def lab_qos_boot(
             nvout, _ = _cap(nv.stdout)
             raise RuntimeError(f"noVNC/websockify install failed (rc={nv.returncode}): {nverr or nvout}"[:1200])
         launcher = (
-            _QOS_GRAPHICAL_LAUNCHER.replace("@APPEND@", f"-append qseed={qseed_hex}" if qseed_hex else "")
+            _QOS_GRAPHICAL_LAUNCHER.replace("@APPEND@", append_arg)
             .replace("@NIC@", _QOS_NIC_NET if network else _QOS_NIC_NONE)
             .replace("@VNCDISP@", str(vnc_display))
             .replace("@VNCPORT@", str(vnc_port))
@@ -1559,6 +1577,7 @@ def lab_qos_boot(
             "already_running": False,
             "graphical": True,
             "network": network,
+            "quiet": quiet,
             "paused": True,  # started with -S; lab_watch resumes it (cont) once the browser is attached
             "booted": False,
             "novnc_web_port": int(web_port),
@@ -1581,7 +1600,7 @@ def lab_qos_boot(
     boot = (
         _QOS_BOOT_SCRIPT.replace("@SESSION@", session)
         .replace("@SETTLE@", "4")
-        .replace("@APPEND@", f"-append qseed={qseed_hex}" if qseed_hex else "")
+        .replace("@APPEND@", append_arg)
         .replace("@NIC@", _QOS_NIC_NET if network else _QOS_NIC_NONE)
     )
     b = _remote_ssh_sh(ssh_alias, boot, timeout=60)
@@ -1596,6 +1615,7 @@ def lab_qos_boot(
         "already_running": False,
         "booted": booted,
         "network": network,
+        "quiet": quiet,
         "com2_log": f"/tmp/qos-com2-{session}.log",
         "tail": lines,
         "attach": attach,

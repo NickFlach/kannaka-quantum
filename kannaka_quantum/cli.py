@@ -310,6 +310,9 @@ def build_parser() -> argparse.ArgumentParser:
     qb.add_argument("--network", action="store_true",
                     help="boot with an rtl8139 NIC on QEMU user-net (SLIRP) so QuantumOS runs its "
                          "full network stack — DHCP/DNS self-test + the ring-3 nslookup/udping/http shell")
+    qb.add_argument("--quiet", action="store_true",
+                    help="silence the demo kernel's steady-state console chatter (timer-tick heartbeat "
+                         "+ paradoxd/ghostd narration) for a clean interactive qsh; pairs with --network")
     qb.add_argument("--graphical", action="store_true",
                     help="boot with a VGA framebuffer over VNC (paused) + install noVNC; watch with lab-watch")
     qb.add_argument("--web-port", type=int, default=lab.QOS_DEFAULT_WEB_PORT, help="websockify web port for --graphical")
@@ -493,6 +496,7 @@ def _dispatch_lab(args) -> Optional[dict]:
             qseed=args.qseed,
             graphical=args.graphical,
             network=args.network,
+            quiet=args.quiet,
             web_port=args.web_port,
             monitor_port=args.monitor_port,
         )

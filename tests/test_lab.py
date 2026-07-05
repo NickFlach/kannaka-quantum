@@ -455,6 +455,49 @@ def test_qos_boot_network_adds_rtl8139_on_slirp(_isolated_leases, monkeypatch):
     assert out["network"] is True
 
 
+def test_qos_boot_quiet_adds_kernel_quiet_token(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 1, "", ""),
+        ("tmux new-session", 0, "QuantumOS ready\n", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_qos_boot("alias-qos", quiet=True)
+    boot = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
+    assert "-append quiet" in boot
+    assert out["quiet"] is True
+
+
+def test_qos_boot_network_and_quiet_compose(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 1, "", ""),
+        ("tmux new-session", 0, "QuantumOS ready\n", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    out = lab.lab_qos_boot("alias-qos", network=True, quiet=True, qseed="dead")
+    boot = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
+    # qseed + quiet ride the SAME -append; the NIC rides alongside.
+    assert "-append qseed=dead quiet" in boot
+    assert "-device rtl8139,netdev=n0,romfile=" in boot
+    assert out["network"] is True and out["quiet"] is True
+
+
+def test_qos_boot_default_has_no_append(_isolated_leases, monkeypatch):
+    lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
+                       "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})
+    sh = _FakeSh([
+        ("has-session", 1, "", ""),
+        ("tmux new-session", 0, "QuantumOS ready\n", ""),
+    ])
+    monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
+    lab.lab_qos_boot("alias-qos")
+    boot = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
+    assert "-append" not in boot  # default boot line unchanged
+
+
 def test_qos_boot_graphical_network_adds_rtl8139(_isolated_leases, monkeypatch):
     lab._append_lease({"instance_id": "i-1", "kind": "instance", "ssh_alias": "alias-qos",
                        "status": "active", "expires_at": "2999-01-01T00:00:00Z", "event": "provision"})

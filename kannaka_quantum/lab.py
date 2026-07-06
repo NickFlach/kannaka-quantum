@@ -1488,7 +1488,12 @@ def lab_qos_boot(
         _append_tokens.append(f"qseed={qseed_hex}")
     if quiet:
         _append_tokens.append("quiet")
-    append_arg = ("-append " + " ".join(_append_tokens)) if _append_tokens else ""
+    # Quote the joined tokens as ONE shell word: with two tokens
+    # ("qseed=<hex> quiet") an unquoted "-append qseed=<hex> quiet" word-splits
+    # so QEMU takes only qseed as the append value and treats "quiet" as a
+    # bare positional ("Could not open 'quiet'"). Quoting fixes the combo and is
+    # harmless for a single token.
+    append_arg = ('-append "' + " ".join(_append_tokens) + '"') if _append_tokens else ""
 
     lease = _lease_for_alias(ssh_alias)
     if not allow_unleased and (lease is None or lease.get("status") != "active"):

@@ -1,5 +1,7 @@
 # kannaka-quantum
 
+[![kannaka-quantum MCP server](https://glama.ai/mcp/servers/NickFlach/kannaka-quantum/badges/score.svg)](https://glama.ai/mcp/servers/NickFlach/kannaka-quantum)
+
 **Real quantum capabilities for [Kannaka](https://github.com/NickFlach/kannaka-memory), executed on actual quantum backends.**
 
 Kannaka's memory is a *Holographic Resonance Medium* — recall is wave interference, and *"attention acts as gravity: wavefronts whose phase/amplitude align with the query are pulled forward."* That is, almost verbatim, the definition of **quantum amplitude amplification**. This package makes the correspondence literal: it runs Kannaka's recall — plus arbitrary circuits and a true-entropy source — on real quantum hardware.

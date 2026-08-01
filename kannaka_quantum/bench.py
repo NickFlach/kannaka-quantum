@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import datetime
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 from . import core
 
@@ -78,11 +79,11 @@ def run_bench(
     device: str = core.LOCAL_DEVICE,
     shots: int = 1024,
     amplify: bool = True,
-    limit: Optional[int] = None,
+    limit: int | None = None,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
-    subcategory: Optional[str] = None,
-    recall_fn: Optional[RecallFn] = None,
+    max_credits: float | None = None,
+    subcategory: str | None = None,
+    recall_fn: RecallFn | None = None,
 ) -> dict[str, Any]:
     """Run every scenario through recall and aggregate the agreement rate.
 
@@ -238,15 +239,15 @@ def bench_command(
     device: str = core.LOCAL_DEVICE,
     shots: int = 1024,
     amplify: bool = True,
-    limit: Optional[int] = None,
+    limit: int | None = None,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
-    subcategory: Optional[str] = None,
-    out: Optional[str] = None,
-    baseline: Optional[str] = None,
+    max_credits: float | None = None,
+    subcategory: str | None = None,
+    out: str | None = None,
+    baseline: str | None = None,
     regression_threshold: float = DEFAULT_REGRESSION_POINTS,
     update_baseline: bool = False,
-    recall_fn: Optional[RecallFn] = None,
+    recall_fn: RecallFn | None = None,
 ) -> tuple[dict[str, Any], int]:
     """Orchestrate a benchmark run for the CLI.
 

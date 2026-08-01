@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import math
 import os
-from typing import Any, Optional
+from typing import Any
 
 from . import core
 
@@ -78,8 +78,8 @@ def chsh(
     device: str = core.LOCAL_DEVICE,
     shots: int = 4096,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
-    subcategory: Optional[str] = None,
+    max_credits: float | None = None,
+    subcategory: str | None = None,
 ) -> dict[str, Any]:
     """Run the four CHSH settings and compute the Bell parameter S.
 

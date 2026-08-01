@@ -13,7 +13,6 @@ import pytest
 
 from kannaka_quantum import lab_bootstrap as lb
 
-
 # ── T4.4: reproducible env + build plan ─────────────────────────────────────
 
 
@@ -100,7 +99,7 @@ def _run_install(tmp_path, env_extra):
     }
     r = subprocess.run(
         ["sh", "-c", lb.kannaka_install_script()],
-        env=env, capture_output=True, text=True, timeout=60,
+        env=env, capture_output=True, text=True, timeout=60, check=False,
     )
     installed = (home / ".local" / "bin" / "kannaka").exists()
     return r.returncode, installed, (r.stderr or "")

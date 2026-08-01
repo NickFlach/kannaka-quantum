@@ -24,7 +24,7 @@ dependencies = [
 # in Jupyter's kernelspec manager. Compute/credit/profile tools do NOT need it.
 lab = ["jupyter-client>=8"]
 # Lint + test only — nothing heavyweight. This is what CI installs.
-dev = ["pytest>=8", "ruff>=0.5"]
+dev = ["pytest>=8", "ruff>=0.16,<0.17"]
 
 [project.urls]
 Homepage = "https://github.com/NickFlach/kannaka-quantum"

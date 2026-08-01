@@ -169,7 +169,7 @@ def _write_corpus(tmp_path, scenarios) -> str:
 def test_bench_command_update_baseline_writes_and_passes(tmp_path):
     corpus = _write_corpus(tmp_path, [_scn([0.9, 0.1]), _scn([0.2, 0.8])])
     baseline = tmp_path / "baseline.json"
-    result, code = bench.bench_command(
+    _result, code = bench.bench_command(
         scenarios=corpus, baseline=str(baseline), update_baseline=True, recall_fn=_mk_recall()
     )
     assert code == 0

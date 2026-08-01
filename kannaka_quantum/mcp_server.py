@@ -6,8 +6,6 @@ Run with: ``python -m kannaka_quantum mcp``  (stdio transport)
 
 from __future__ import annotations
 
-from typing import Optional
-
 from mcp.server.fastmcp import FastMCP
 
 from . import core
@@ -34,7 +32,7 @@ def run_circuit(
     shots: int = 100,
     device: str = core.DEFAULT_DEVICE,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
+    max_credits: float | None = None,
 ) -> dict:
     """Execute an OpenQASM 3 program on a backend and return measurement counts.
 
@@ -61,12 +59,12 @@ def quantum_random(n_bits: int = 8, device: str = core.DEFAULT_DEVICE, allow_spe
 @mcp.tool()
 def resonance_recall(
     amplitudes: list[float],
-    labels: Optional[list[str]] = None,
+    labels: list[str] | None = None,
     shots: int = 1024,
     amplify: bool = True,
     device: str = core.DEFAULT_DEVICE,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
+    max_credits: float | None = None,
 ) -> dict:
     """Run Kannaka's resonance recall *as a quantum circuit*.
 

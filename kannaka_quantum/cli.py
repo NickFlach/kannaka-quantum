@@ -8,23 +8,17 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from typing import Optional
 
-from . import bell
-from . import bench
-from . import core
-from . import entropy
-from . import lab
-from . import qubo
+from . import bell, bench, core, entropy, lab, qubo
 
 
-def _parse_json_arg(s: Optional[str]):
+def _parse_json_arg(s: str | None):
     """Parse a CLI arg that the Rust bridge passes as JSON (dict/list), or as a
     comma-separated list. Returns None for empty/missing."""
     if not s:
         return None
     s = s.strip()
-    if s.startswith("[") or s.startswith("{"):
+    if s.startswith(("[", "{")):
         return json.loads(s)
     return [x.strip() for x in s.split(",") if x.strip()]
 
@@ -36,7 +30,7 @@ def _parse_floats(s: str) -> list[float]:
     return [float(x) for x in s.split(",") if x.strip()]
 
 
-def _parse_strs(s: Optional[str]) -> Optional[list[str]]:
+def _parse_strs(s: str | None) -> list[str] | None:
     if not s:
         return None
     s = s.strip()
@@ -386,7 +380,7 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _dispatch_lab(args) -> Optional[dict]:
+def _dispatch_lab(args) -> dict | None:
     """Run a ``lab-*`` subcommand; returns its result dict, or None if ``cmd``
     is not a lab command."""
     cmd = args.cmd
@@ -526,14 +520,15 @@ def _dispatch_lab(args) -> Optional[dict]:
     return None
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         if args.cmd == "devices":
             out = core.list_devices(online_only=args.online)
         elif args.cmd == "run":
             if args.qasm_file:
-                qasm = open(args.qasm_file, encoding="utf-8").read()
+                with open(args.qasm_file, encoding="utf-8") as f:
+                    qasm = f.read()
             elif args.qasm and args.qasm != "-":
                 qasm = args.qasm
             else:  # stdin — the robust path for long circuits / shell quoting.
@@ -583,7 +578,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             )
         elif args.cmd == "qubo":
             if args.problem_file and args.problem_file != "-":
-                problem_text = open(args.problem_file, encoding="utf-8").read()
+                with open(args.problem_file, encoding="utf-8") as f:
+                    problem_text = f.read()
             else:  # stdin — the JSON-CLI boundary the Rust SubprocessSolver uses.
                 problem_text = sys.stdin.buffer.read().decode("utf-8-sig", errors="replace")
             if not problem_text.strip():
@@ -668,7 +664,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             raise ValueError(f"unknown command {args.cmd}")
         print(json.dumps(out))
         return 0
-    except Exception as e:  # surface as JSON so callers can parse failures
+    except Exception as e:  # surface as JSON so callers can parse failures  # noqa: BLE001 - boundary: failure is surfaced in structured output
         print(json.dumps({"error": str(e), "type": type(e).__name__}))
         return 1
 

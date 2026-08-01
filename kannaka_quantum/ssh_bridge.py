@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from typing import Optional
 
 #: 64 KiB — a single read1 returns whatever is already buffered (interactive
 #: streaming) up to this, so the tunnel stays responsive.
@@ -32,7 +31,7 @@ _CHUNK = 65536
 _TOKEN_ENV = "KANNAKA_SSH_BRIDGE_TOKEN"
 
 
-def _resolve_bridge_token(token: Optional[str]) -> Optional[str]:
+def _resolve_bridge_token(token: str | None) -> str | None:
     """Prefer an explicit ``--token``; else fall back to ``KANNAKA_SSH_BRIDGE_TOKEN``.
 
     An explicit token always wins (the qBraid-generated ProxyCommand relies on
@@ -45,7 +44,7 @@ def _resolve_bridge_token(token: Optional[str]) -> Optional[str]:
     return env.strip() if env else None
 
 
-async def _bridge(url: str, token: Optional[str], ping_interval: float) -> None:
+async def _bridge(url: str, token: str | None, ping_interval: float) -> None:
     from websockets.asyncio.client import connect as ws_connect
 
     kwargs: dict = {"ping_interval": ping_interval}
@@ -65,7 +64,7 @@ async def _bridge(url: str, token: Optional[str], ping_interval: float) -> None:
                     if not data:
                         break
                     await ws.send(data)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - best-effort; failure here must not break the primary path
                 pass
 
         async def pump_stdout() -> None:
@@ -75,7 +74,7 @@ async def _bridge(url: str, token: Optional[str], ping_interval: float) -> None:
                         message = message.encode()
                     stdout.write(message)
                     stdout.flush()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - best-effort; failure here must not break the primary path
                 pass
 
         t_in = asyncio.create_task(pump_stdin())
@@ -85,7 +84,7 @@ async def _bridge(url: str, token: Optional[str], ping_interval: float) -> None:
             t.cancel()
 
 
-def run_ssh_bridge(url: str, token: Optional[str] = None, ping_interval: float = 30.0) -> int:
+def run_ssh_bridge(url: str, token: str | None = None, ping_interval: float = 30.0) -> int:
     """Entry point for the ``ssh-bridge`` CLI subcommand (raw stdio, no JSON)."""
     token = _resolve_bridge_token(token)
     try:
@@ -93,6 +92,6 @@ def run_ssh_bridge(url: str, token: Optional[str] = None, ping_interval: float =
         return 0
     except KeyboardInterrupt:
         return 0
-    except Exception as e:  # surface to ssh's stderr
+    except Exception as e:  # surface to ssh's stderr  # noqa: BLE001 - boundary: failure is surfaced in structured output
         print(f"ssh-bridge error: {e}", file=sys.stderr)
         return 1

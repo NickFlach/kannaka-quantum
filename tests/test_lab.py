@@ -465,7 +465,7 @@ def test_qos_boot_quiet_adds_kernel_quiet_token(_isolated_leases, monkeypatch):
     monkeypatch.setattr(lab, "_remote_ssh_sh", sh)
     out = lab.lab_qos_boot("alias-qos", quiet=True)
     boot = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
-    assert "-append quiet" in boot
+    assert '-append "quiet"' in boot
     assert out["quiet"] is True
 
 
@@ -480,7 +480,7 @@ def test_qos_boot_network_and_quiet_compose(_isolated_leases, monkeypatch):
     out = lab.lab_qos_boot("alias-qos", network=True, quiet=True, qseed="dead")
     boot = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
     # qseed + quiet ride the SAME -append; the NIC rides alongside.
-    assert "-append qseed=dead quiet" in boot
+    assert '-append "qseed=dead quiet"' in boot
     assert "-device rtl8139,netdev=n0,romfile=" in boot
     assert out["network"] is True and out["quiet"] is True
 
@@ -585,7 +585,7 @@ def test_qos_boot_qseed_reservoir_draw_passes_append_and_provenance(_isolated_le
     assert "0000112233445566".upper() in grep_cmd  # exact padded echo matched
     assert out["qseed_provenance"][0]["job_id"] == "qjob-test"
     boot_cmd = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
-    assert "-append qseed=0000112233445566" in boot_cmd
+    assert '-append "qseed=0000112233445566"' in boot_cmd
 
 
 def test_qos_boot_qseed_explicit_hex_and_unconfirmed(_isolated_leases, monkeypatch):
@@ -602,7 +602,7 @@ def test_qos_boot_qseed_explicit_hex_and_unconfirmed(_isolated_leases, monkeypat
     assert out["qseed_confirmed"] is False  # honest: echo not observed
     assert "qseed_provenance" not in out    # explicit seeds carry no chain
     boot_cmd = next(c for _, c, _ in sh.calls if "tmux new-session" in c)
-    assert "-append qseed=deadbeef" in boot_cmd
+    assert '-append "qseed=deadbeef"' in boot_cmd
 
 
 def test_qos_boot_qseed_rejects_garbage(_isolated_leases, monkeypatch):

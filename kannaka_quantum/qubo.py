@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -167,7 +167,7 @@ def _optimize_layer(n, a, b, energies, p, *, restarts, rng):
         bound = ansatz.assign_parameters(dict(zip(params, values)))
         return _expected_energy(bound, energies)
 
-    best_vals: Optional[np.ndarray] = None
+    best_vals: np.ndarray | None = None
     best_e = float("inf")
     for _ in range(restarts):
         x0 = rng.uniform(0.0, np.pi, size=2 * p)
@@ -206,8 +206,8 @@ def solve(
     restarts: int = 2,
     seed: int = 7,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
-    subcategory: Optional[str] = None,
+    max_credits: float | None = None,
+    subcategory: str | None = None,
 ) -> dict[str, Any]:
     """Solve a QUBO with QAOA (p = 1..max_p) and return a ConsolidationSolution.
 

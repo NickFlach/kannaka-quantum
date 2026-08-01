@@ -15,7 +15,7 @@ import sys
 
 try:  # render unicode bars/em-dashes on any console
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-except Exception:
+except Exception:  # noqa: BLE001, S110 - best-effort; failure here must not break the primary path
     pass
 
 from kannaka_quantum import core
@@ -26,7 +26,7 @@ KANNAKA = os.environ.get("KANNAKA_BIN") or os.path.expanduser(r"~/.local/bin/kan
 def fetch_memories(query: str, k: int = 4):
     out = subprocess.run(
         [KANNAKA, "recall", query, "--top-k", str(k)],
-        capture_output=True, encoding="utf-8", errors="replace",
+        capture_output=True, encoding="utf-8", errors="replace", check=False,
         env={**os.environ, "KANNAKA_QUIET": "1"},
     )
     rows = json.loads(out.stdout)

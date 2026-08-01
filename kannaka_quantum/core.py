@@ -24,8 +24,9 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -78,7 +79,7 @@ QBRAID_USD_PER_CREDIT = 0.01
 QBRAID_DEFAULT_MAX_CREDITS = 200.0
 
 
-def _resolve_api_key() -> Optional[str]:
+def _resolve_api_key() -> str | None:
     key = os.environ.get("QBRAID_API_KEY")
     if key:
         return key.strip()
@@ -133,7 +134,7 @@ def _oq_credentials():
             continue
         try:
             d = json.loads(p.read_text())
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 - skip malformed/failed entry, keep processing the rest
             continue
         if d.get("client_id") and d.get("client_secret"):
             return ClientCredentials(d["client_id"], d["client_secret"])
@@ -166,7 +167,7 @@ def _oq_page(paginated, *attrs) -> list:
             return list(v)
     try:
         return list(paginated)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort probe; falls back to a safe default
         return []
 
 
@@ -174,17 +175,17 @@ def _oq_backends(mgmt) -> list:
     return _oq_page(mgmt.list_backend_classes(limit=50), "backend_classes", "data", "items", "results")
 
 
-def _oq_org_id(mgmt) -> Optional[str]:
+def _oq_org_id(mgmt) -> str | None:
     orgs = _oq_page(mgmt.list_user_organizations(limit=20), "organizations", "data", "items")
     return getattr(orgs[0], "id", None) if orgs else None
 
 
-def _oq_backend_code(b) -> Optional[str]:
+def _oq_backend_code(b) -> str | None:
     """The short backend id (e.g. ``iqm:garnet``) used in device strings."""
     return getattr(b, "short_code", None) or getattr(b, "name", None) or getattr(b, "id", None)
 
 
-def _oq_estimate_cost(device: str, shots: int, max_credits: Optional[float], allow_spend: bool) -> Optional[dict]:
+def _oq_estimate_cost(device: str, shots: int, max_credits: float | None, allow_spend: bool) -> dict | None:
     """Gate an OpenQuantum run on (1) an explicit spend opt-in and (2) a credit
     ceiling, using the documented per-shot price as a pre-flight estimate.
 
@@ -234,7 +235,7 @@ def _oq_counts(output: Any) -> dict[str, int]:
             c = getter(output)
             if c:
                 return {str(k): int(v) for k, v in dict(c).items()}
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 - skip malformed/failed entry, keep processing the rest
             continue
     return {}
 
@@ -244,8 +245,8 @@ def _run_openquantum(
     device: str,
     shots: int,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
-    subcategory: Optional[str] = None,
+    max_credits: float | None = None,
+    subcategory: str | None = None,
 ) -> dict[str, Any]:
     """Submit an OpenQASM program to an OpenQuantum QPU and return counts.
 
@@ -298,7 +299,7 @@ def list_devices(online_only: bool = False, include_openquantum: bool = True) ->
         for dev in provider.get_devices():
             try:
                 md = dev.metadata()
-            except Exception:  # pragma: no cover - network/SDK variance
+            except Exception:  # pragma: no cover - network/SDK variance  # noqa: BLE001 - best-effort probe; falls back to a safe default
                 md = {}
             did = md.get("device_id") or getattr(dev, "id", None)
             status = str(md.get("status") or "")
@@ -313,7 +314,7 @@ def list_devices(online_only: bool = False, include_openquantum: bool = True) ->
                     "cost": "free" if is_sim else "qbraid-credits",
                 }
             )
-    except Exception as e:  # pragma: no cover - report but don't fail the listing
+    except Exception as e:  # pragma: no cover - report but don't fail the listing  # noqa: BLE001 - boundary: failure is surfaced in structured output
         devices.append({"id": None, "provider": "qbraid", "status": "ERROR", "error": str(e)})
 
     # OpenQuantum fleet (real QPUs; spends Spark credits). Best-effort; skipped
@@ -337,7 +338,7 @@ def list_devices(online_only: bool = False, include_openquantum: bool = True) ->
                         "cost": (f"${price}/shot" if price is not None else "spark-credits"),
                     }
                 )
-        except Exception as e:  # pragma: no cover
+        except Exception as e:  # pragma: no cover  # noqa: BLE001 - boundary: failure is surfaced in structured output
             devices.append({"id": None, "provider": "openquantum", "status": "ERROR", "error": str(e)})
 
     if online_only:
@@ -358,13 +359,13 @@ def _counts_from_result(res: Any) -> dict[str, int]:
             c = getter(res)
             if c:
                 return {str(k): int(v) for k, v in dict(c).items()}
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 - skip malformed/failed entry, keep processing the rest
             continue
     return {}
 
 
 def _qbraid_spend_guard(
-    pricing: dict, device: str, shots: int, allow_spend: bool, max_credits: Optional[float]
+    pricing: dict, device: str, shots: int, allow_spend: bool, max_credits: float | None
 ) -> dict[str, Any]:
     """Gate a real (non-simulator) qBraid run on an explicit spend opt-in + a
     credit ceiling, using the device's live pricing metadata.
@@ -411,8 +412,8 @@ def run_qasm(
     device: str = DEFAULT_DEVICE,
     shots: int = 100,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
-    subcategory: Optional[str] = None,
+    max_credits: float | None = None,
+    subcategory: str | None = None,
 ) -> dict[str, Any]:
     """Run an OpenQASM program on a device and return measurement counts.
 
@@ -430,13 +431,13 @@ def run_qasm(
     if "sim" not in device.lower():  # real qBraid QPU — gate the spend
         try:
             pricing = (dev.metadata() or {}).get("pricing") or {}
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort probe; falls back to a safe default
             pricing = {}
         cost_estimate = _qbraid_spend_guard(pricing, device, shots, allow_spend, max_credits)
     job = dev.run(qasm3, shots=shots)
     try:
         job.wait_for_final_state(timeout=300)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - best-effort; failure here must not break the primary path
         pass
     res = job.result()
     out: dict[str, Any] = {
@@ -481,8 +482,8 @@ def run_qiskit(
     device: str = DEFAULT_DEVICE,
     shots: int = 100,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
-    subcategory: Optional[str] = None,
+    max_credits: float | None = None,
+    subcategory: str | None = None,
 ) -> dict[str, Any]:
     """Run a Qiskit circuit on a device.
 
@@ -508,8 +509,8 @@ def qrng(
     n_bits: int = 8,
     device: str = DEFAULT_DEVICE,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
-    subcategory: Optional[str] = None,
+    max_credits: float | None = None,
+    subcategory: str | None = None,
 ) -> dict[str, Any]:
     """Generate ``n_bits`` of true quantum randomness from measurement collapse.
 
@@ -565,7 +566,7 @@ def _optimal_iterations(target_amplitude: float) -> int:
     theta = float(np.arcsin(a))
     if theta >= np.pi / 2:
         return 0
-    return max(0, int(round((np.pi / 2 - theta) / (2 * theta))))
+    return max(0, round((np.pi / 2 - theta) / (2 * theta)))
 
 
 def _measured_index(bits: str, device: str) -> int:
@@ -586,14 +587,14 @@ def _measured_index(bits: str, device: str) -> int:
 
 def quantum_recall(
     amplitudes: Sequence[float],
-    labels: Optional[Sequence[str]] = None,
+    labels: Sequence[str] | None = None,
     shots: int = 1024,
     amplify: bool = True,
-    iterations: Optional[int] = None,
+    iterations: int | None = None,
     device: str = DEFAULT_DEVICE,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
-    subcategory: Optional[str] = None,
+    max_credits: float | None = None,
+    subcategory: str | None = None,
 ) -> dict[str, Any]:
     """Perform Kannaka's resonance recall *as a quantum circuit*.
 
@@ -665,7 +666,7 @@ def quantum_recall(
             dist[idx] = dist.get(idx, 0) + int(c)
     quantum_top = max(dist, key=dist.get) if dist else None
 
-    def lbl(i: Optional[int]):
+    def lbl(i: int | None):
         if i is None:
             return None
         return labels[i] if labels is not None else i

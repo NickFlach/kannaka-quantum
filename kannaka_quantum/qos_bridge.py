@@ -47,7 +47,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # --------------------------------------------------------------------------- #
 # Wire-protocol constants (mirror user/swarm.h)
@@ -192,7 +192,7 @@ def verify_lamport(message: bytes, pkdigest: bytes, signature: bytes) -> tuple[b
     return True, ""
 
 
-def parse_attestation(msg: str) -> tuple[Optional[str], int]:
+def parse_attestation(msg: str) -> tuple[str | None, int]:
     """Parse ``QOS-BOOT|qseed=<hex|none>|ticks=<n>`` -> ``(qseed_hex|None, ticks)``.
 
     Unlike the reference (which returns the qseed as an int), we keep the hex
@@ -213,7 +213,7 @@ def parse_attestation(msg: str) -> tuple[Optional[str], int]:
     return qseed_hex, ticks
 
 
-def _qseed_int(value: Optional[str]) -> Optional[int]:
+def _qseed_int(value: str | None) -> int | None:
     """Normalize a qseed (hex string, ``'none'``, or ``None``) to an int or None."""
     if value is None:
         return None
@@ -223,10 +223,10 @@ def _qseed_int(value: Optional[str]) -> Optional[int]:
 
 
 def verify_parts(
-    pkdigest: Optional[bytes],
-    attest_msg: Optional[str],
+    pkdigest: bytes | None,
+    attest_msg: str | None,
     signature: bytes,
-    expected_qseed: Optional[str],
+    expected_qseed: str | None,
     handshake: bool,
     frame_count: int,
     bad_crc: int,
@@ -291,7 +291,7 @@ def verify_parts(
     return result
 
 
-def verify_attestation(blob: bytes, expected_qseed: Optional[str] = None) -> dict[str, Any]:
+def verify_attestation(blob: bytes, expected_qseed: str | None = None) -> dict[str, Any]:
     """Parse a complete COM2 capture and verify its boot attestation.
 
     ``blob`` is the raw byte stream QuantumOS wrote to COM2 (QEMU
@@ -301,8 +301,8 @@ def verify_attestation(blob: bytes, expected_qseed: Optional[str] = None) -> dic
     ...}``. Equivalent in outcome to running scripts/verify_attestation.py.
     """
     frames, bad_crc = parse_frames(blob)
-    pkdigest: Optional[bytes] = None
-    attest_msg: Optional[str] = None
+    pkdigest: bytes | None = None
+    attest_msg: str | None = None
     sig = bytearray()
     handshake = False
     for ftype, payload in frames:
@@ -387,7 +387,7 @@ class KannakaCliSink(NatsSink):
 
     def __init__(
         self,
-        kannaka_bin: Optional[str] = None,
+        kannaka_bin: str | None = None,
         target: str = "all",
         timeout: float = 20.0,
         runner=subprocess.run,
@@ -421,7 +421,7 @@ class ByteSource:
 
     two_way = False
 
-    def read(self, max_bytes: int = 4096, timeout: Optional[float] = None) -> bytes:  # pragma: no cover - interface
+    def read(self, max_bytes: int = 4096, timeout: float | None = None) -> bytes:  # pragma: no cover - interface
         raise NotImplementedError
 
     def send(self, data: bytes) -> None:
@@ -446,9 +446,9 @@ class FileByteSource(ByteSource):
         self.path = path
         self.follow = follow
         self.poll = poll
-        self._f = open(path, "rb")
+        self._f = open(path, "rb")  # noqa: SIM115 — held for the source's lifetime, released in close()
 
-    def read(self, max_bytes: int = 4096, timeout: Optional[float] = None) -> bytes:
+    def read(self, max_bytes: int = 4096, timeout: float | None = None) -> bytes:
         data = self._f.read(max_bytes)
         if data or not self.follow:
             return data
@@ -464,7 +464,7 @@ class FileByteSource(ByteSource):
     def close(self) -> None:
         try:
             self._f.close()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - best-effort; failure here must not break the primary path
             pass
 
 
@@ -481,7 +481,7 @@ class TcpByteSource(ByteSource):
     def __init__(self, host: str, port: int, connect_timeout: float = 8.0) -> None:
         deadline = time.time() + connect_timeout
         sock = None
-        last_err: Optional[Exception] = None
+        last_err: Exception | None = None
         while time.time() < deadline:
             try:
                 sock = socket.create_connection((host, port), timeout=2.0)
@@ -493,11 +493,11 @@ class TcpByteSource(ByteSource):
             raise RuntimeError(f"could not connect to COM2 tcp {host}:{port}: {last_err}")
         self._sock = sock
 
-    def read(self, max_bytes: int = 4096, timeout: Optional[float] = None) -> bytes:
+    def read(self, max_bytes: int = 4096, timeout: float | None = None) -> bytes:
         self._sock.settimeout(timeout if timeout is not None else 1.0)
         try:
             return self._sock.recv(max_bytes)
-        except socket.timeout:
+        except TimeoutError:
             return b""
 
     def send(self, data: bytes) -> None:
@@ -506,7 +506,7 @@ class TcpByteSource(ByteSource):
     def close(self) -> None:
         try:
             self._sock.close()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - best-effort; failure here must not break the primary path
             pass
 
 
@@ -554,12 +554,12 @@ class SshTailByteSource(ByteSource):
         ]
         # stderr → a temp file (not DEVNULL): drained on demand so a connect
         # failure is diagnosable, without risking a PIPE deadlock on a full buffer.
-        self._stderr = tempfile.TemporaryFile()
+        self._stderr = tempfile.TemporaryFile()  # noqa: SIM115 — must outlive the Popen; drained in stderr_text(), closed in close()
         self._proc = subprocess.Popen(
             argv, stdout=subprocess.PIPE, stderr=self._stderr, stdin=subprocess.DEVNULL
         )
 
-    def read(self, max_bytes: int = 4096, timeout: Optional[float] = None) -> bytes:
+    def read(self, max_bytes: int = 4096, timeout: float | None = None) -> bytes:
         assert self._proc.stdout is not None
         data = self._proc.stdout.read1(max_bytes) if hasattr(self._proc.stdout, "read1") \
             else self._proc.stdout.read(max_bytes)
@@ -570,17 +570,17 @@ class SshTailByteSource(ByteSource):
         try:
             self._stderr.seek(0)
             return self._stderr.read().decode("utf-8", "replace").strip()
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort probe; falls back to a safe default
             return ""
 
     def close(self) -> None:
         try:
             self._proc.terminate()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - best-effort; failure here must not break the primary path
             pass
         try:
             self._stderr.close()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - best-effort; failure here must not break the primary path
             pass
 
 
@@ -600,20 +600,20 @@ class QosBridge:
     def __init__(
         self,
         sink: NatsSink,
-        node: Optional[str] = None,
-        expected_qseed: Optional[str] = None,
-        source: Optional[ByteSource] = None,
+        node: str | None = None,
+        expected_qseed: str | None = None,
+        source: ByteSource | None = None,
     ) -> None:
         self.sink = sink
         self.node = node
         self.expected_qseed = expected_qseed
         self.source = source
         self._stream = FrameStream()
-        self._pk: Optional[bytes] = None
-        self._attest: Optional[str] = None
+        self._pk: bytes | None = None
+        self._attest: str | None = None
         self._sig = bytearray()
         self._handshake = False
-        self.attest_result: Optional[dict[str, Any]] = None
+        self.attest_result: dict[str, Any] | None = None
         self.attest_published = False
         self.relayed: list[dict[str, Any]] = []
 
@@ -640,7 +640,7 @@ class QosBridge:
                 published.append(ev)
         return published
 
-    def _handle(self, ftype: int, payload: bytes) -> Optional[dict[str, Any]]:
+    def _handle(self, ftype: int, payload: bytes) -> dict[str, Any] | None:
         if ftype == FRAME_HANDSHAKE:
             self._handshake = True
             return None
@@ -658,7 +658,7 @@ class QosBridge:
         # PING/PONG/DISCONNECT and anything else: record locally, not published.
         return None
 
-    def _maybe_publish_attest(self) -> Optional[dict[str, Any]]:
+    def _maybe_publish_attest(self) -> dict[str, Any] | None:
         """Once pk + attestation + a full-length signature are in, verify and
         publish exactly one attest event."""
         if self.attest_published:
@@ -696,7 +696,7 @@ class QosBridge:
         n += 1 if self._handshake else 0
         return n
 
-    def _relay_data(self, payload: bytes) -> Optional[dict[str, Any]]:
+    def _relay_data(self, payload: bytes) -> dict[str, Any] | None:
         opcode = payload[0] if payload else None
         event_payload = {
             "node": self._node_id(),
@@ -724,11 +724,10 @@ class QosBridge:
             chunk = self.source.read(4096, timeout=min(1.0, max(0.0, remaining)))
             if chunk:
                 self.feed(chunk)
-            elif not self.source.two_way:
+            elif not self.source.two_way and not getattr(self.source, "follow", False):
                 # Receive-only source returned EOF/empty: for a static capture
                 # that means we're done; for follow-mode the timeout governs.
-                if not getattr(self.source, "follow", False):
-                    break
+                break
             if until_attest and self.attest_published:
                 break
         return self.summary()
@@ -779,7 +778,7 @@ class QosBridge:
 # --------------------------------------------------------------------------- #
 # Embassy mode — QuantumOS joins the mesh under its own signed identity
 # --------------------------------------------------------------------------- #
-def default_agent_id(qseed_hex: Optional[str]) -> str:
+def default_agent_id(qseed_hex: str | None) -> str:
     """The default swarm agent-id for a node booted with ``qseed_hex``:
     ``qos-<hex16>`` (matching :meth:`QosBridge._node_id`), or ``qos-node`` for a
     seedless boot / unknown qseed."""
@@ -805,9 +804,9 @@ class KannakaSwarm:
 
     def __init__(
         self,
-        agent_id: Optional[str] = None,
-        kannaka_bin: Optional[str] = None,
-        env: Optional[dict[str, str]] = None,
+        agent_id: str | None = None,
+        kannaka_bin: str | None = None,
+        env: dict[str, str] | None = None,
         spawn=None,
         run=None,
         timeout: float = 20.0,
@@ -845,7 +844,7 @@ class KannakaSwarm:
 
     def _default_run(self, argv: list[str]):
         return subprocess.run(
-            argv, capture_output=True, text=True, timeout=self.timeout, env=self._merged_env(),
+            argv, capture_output=True, text=True, timeout=self.timeout, env=self._merged_env(), check=False,
         )
 
     # -- lifecycle ---------------------------------------------------------- #
@@ -864,13 +863,13 @@ class KannakaSwarm:
             return
         try:
             self._run(self.leave_argv())
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - best-effort probe; falls back to a safe default
             pass  # the daemon terminate below is the authoritative clean-leave
         finally:
             if self._proc is not None:
                 try:
                     self._proc.terminate()
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 - best-effort; failure here must not break the primary path
                     pass
             self.joined = False
 
@@ -880,7 +879,7 @@ class KannakaSwarm:
         return getattr(r, "stdout", "") or ""
 
     @property
-    def pid(self) -> Optional[int]:
+    def pid(self) -> int | None:
         return getattr(self._proc, "pid", None)
 
 
@@ -931,16 +930,16 @@ class EmbassyBridge:
         self,
         swarm: KannakaSwarm,
         sink: NatsSink,
-        node: Optional[str] = None,
-        expected_qseed: Optional[str] = None,
-        source: Optional[ByteSource] = None,
+        node: str | None = None,
+        expected_qseed: str | None = None,
+        source: ByteSource | None = None,
     ) -> None:
         self.swarm = swarm
         self._gated = _GatedSink(sink)
         self.bridge = QosBridge(sink=self._gated, node=node, expected_qseed=expected_qseed, source=source)
         self.source = source
         self.joined = False
-        self.refused: Optional[str] = None
+        self.refused: str | None = None
         self._decided = False
 
     def _decide(self) -> None:
@@ -1035,12 +1034,12 @@ class EmbassyBridge:
 # --------------------------------------------------------------------------- #
 # Command entry points (JSON-dict returning, like the rest of the package)
 # --------------------------------------------------------------------------- #
-def _make_sink(nats: bool, kannaka_bin: Optional[str], target: str) -> NatsSink:
+def _make_sink(nats: bool, kannaka_bin: str | None, target: str) -> NatsSink:
     return KannakaCliSink(kannaka_bin=kannaka_bin, target=target) if nats else NullSink()
 
 
-def _make_source(source: str, path: Optional[str], host: Optional[str],
-                 port: Optional[int], alias: Optional[str], follow: bool) -> ByteSource:
+def _make_source(source: str, path: str | None, host: str | None,
+                 port: int | None, alias: str | None, follow: bool) -> ByteSource:
     if source == "file":
         if not path:
             raise RuntimeError("--source file needs --path")
@@ -1056,7 +1055,7 @@ def _make_source(source: str, path: Optional[str], host: Optional[str],
     raise RuntimeError(f"unknown source {source!r} (want file|tcp|ssh)")
 
 
-def qos_bridge_verify(path: str, expected_qseed: Optional[str] = None) -> dict[str, Any]:
+def qos_bridge_verify(path: str, expected_qseed: str | None = None) -> dict[str, Any]:
     """Verify a boot attestation from a COM2 capture file (no NATS). Mirrors
     ``scripts/verify_attestation.py`` but returns a JSON-serializable verdict."""
     with open(path, "rb") as f:
@@ -1069,16 +1068,16 @@ def qos_bridge_verify(path: str, expected_qseed: Optional[str] = None) -> dict[s
 
 def qos_bridge_relay(
     source: str = "file",
-    path: Optional[str] = None,
-    host: Optional[str] = None,
-    port: Optional[int] = None,
-    alias: Optional[str] = None,
-    node: Optional[str] = None,
-    expected_qseed: Optional[str] = None,
+    path: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    alias: str | None = None,
+    node: str | None = None,
+    expected_qseed: str | None = None,
     nats: bool = True,
     once: bool = False,
     timeout: float = 15.0,
-    kannaka_bin: Optional[str] = None,
+    kannaka_bin: str | None = None,
     target: str = "all",
 ) -> dict[str, Any]:
     """Bridge a COM2 stream to the mesh. ``once`` verifies one attestation and
@@ -1102,21 +1101,21 @@ def qos_bridge_relay(
 
 def qos_bridge_embassy(
     source: str = "ssh",
-    path: Optional[str] = None,
-    host: Optional[str] = None,
-    port: Optional[int] = None,
-    alias: Optional[str] = None,
-    agent_id: Optional[str] = None,
-    node: Optional[str] = None,
-    expected_qseed: Optional[str] = None,
+    path: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    alias: str | None = None,
+    agent_id: str | None = None,
+    node: str | None = None,
+    expected_qseed: str | None = None,
     nats: bool = True,
-    kannaka_bin: Optional[str] = None,
+    kannaka_bin: str | None = None,
     target: str = "all",
     verify_timeout: float = 20.0,
     relay_secs: float = 8.0,
     detach: bool = False,
     confirm: bool = True,
-    env: Optional[dict[str, str]] = None,
+    env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Embassy mode: verify the QuantumOS boot attestation and — only if it
     verifies — join the swarm under the node's signed identity, publish the
@@ -1150,7 +1149,7 @@ def qos_bridge_embassy(
                 try:
                     peers = swarm.peers()
                     verdict["joined_confirmed"] = (swarm.agent_id or "") in peers
-                except Exception as exc:  # confirmation is advisory, never fatal
+                except Exception as exc:  # confirmation is advisory, never fatal  # noqa: BLE001 - best-effort probe; falls back to a safe default
                     verdict["joined_confirmed"] = None
                     verdict["confirm_error"] = str(exc)[:200]
         else:

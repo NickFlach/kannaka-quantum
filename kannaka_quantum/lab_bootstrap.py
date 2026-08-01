@@ -20,7 +20,7 @@ unverified binary. Here a missing checksum is fatal.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 #: Reproducible qBraid env for the quantum test bed. Pins the kannaka-quantum
 #: runtime + test deps so bench/QAOA runs are deterministic across rebuilds.
@@ -85,7 +85,7 @@ echo "kannaka installed + sha256-verified -> $DEST/kannaka"
 '''
 
 
-def testbed_build_plan(scenarios_path: Optional[str] = None) -> list[dict[str, str]]:
+def testbed_build_plan(scenarios_path: str | None = None) -> list[dict[str, str]]:
     """Ordered steps (T4.4) to build + test kannaka-memory on a leased instance
     and leave the quantum test bed ready. Structured so a dry-run/mock can assert
     the flow without provisioning."""
@@ -108,7 +108,7 @@ def ephemeral_lifecycle_plan(
     profile: str,
     max_minutes: int = 5,
     release_repo: str = DEFAULT_RELEASE_REPO,
-    nats_url: Optional[str] = None,
+    nats_url: str | None = None,
 ) -> dict[str, Any]:
     """The ordered ephemeral-node lifecycle (T4.3): a structured plan usable by
     the runnable script and asserted by the mocked test. Provision → verified

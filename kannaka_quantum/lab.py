@@ -26,11 +26,12 @@ import os
 import shlex
 import subprocess
 import sys
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional, Sequence, Union
+from typing import Any
 
-from .core import _resolve_api_key, QBRAID_USD_PER_CREDIT
+from .core import QBRAID_USD_PER_CREDIT, _resolve_api_key
 
 #: Default ceiling (in qBraid credits) a single paid compute action may *risk*.
 #: Compute is open-ended per-minute billing, so this is the balance the caller
@@ -58,15 +59,15 @@ def _dump(obj: Any) -> Any:
     if callable(md):
         try:
             return md(mode="json")
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort probe; falls back to a safe default
             try:
                 return md()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - best-effort; failure here must not break the primary path
                 pass
     return obj
 
 
-def _rate_to_credits_per_min(rate_dollar: Optional[float], rate_time_frame: Optional[str]) -> Optional[float]:
+def _rate_to_credits_per_min(rate_dollar: float | None, rate_time_frame: str | None) -> float | None:
     """Normalize a ``$rate / time_frame`` profile rate to qBraid credits/min."""
     if rate_dollar is None:
         return None
@@ -81,7 +82,7 @@ def _rate_to_credits_per_min(rate_dollar: Optional[float], rate_time_frame: Opti
     return round(usd_per_min / QBRAID_USD_PER_CREDIT, 4)
 
 
-def _profile_credits_per_min(p: Any) -> Optional[float]:
+def _profile_credits_per_min(p: Any) -> float | None:
     return _rate_to_credits_per_min(getattr(p, "rate_dollar", None), getattr(p, "rate_time_frame", None))
 
 
@@ -138,10 +139,10 @@ def lab_env_info(slug: str) -> dict[str, Any]:
 
 
 def lab_list_profiles(
-    gpu_only: Optional[bool] = None,
+    gpu_only: bool | None = None,
     available_only: bool = False,
-    plan: Optional[str] = None,
-    limit: Optional[int] = None,
+    plan: str | None = None,
+    limit: int | None = None,
 ) -> dict[str, Any]:
     """List compute profiles (instance types) with live per-minute cost + GPU
     flag, so a caller can choose before spending."""
@@ -173,7 +174,7 @@ def lab_list_profiles(
     return {"profiles": out, "count": len(out)}
 
 
-def lab_compute_status(cluster: Optional[str] = None) -> dict[str, Any]:
+def lab_compute_status(cluster: str | None = None) -> dict[str, Any]:
     """Status of the user's Lab server (running? on which profile? at what URL?)."""
     from qbraid_core.services.compute import ComputeClient
 
@@ -181,7 +182,7 @@ def lab_compute_status(cluster: Optional[str] = None) -> dict[str, Any]:
     return {"server": _dump(st)}
 
 
-def lab_compute_usage(days: Optional[int] = None) -> dict[str, Any]:
+def lab_compute_usage(days: int | None = None) -> dict[str, Any]:
     """Compute usage / per-session credit rates + totals charged."""
     from qbraid_core.services.compute import ComputeClient
 
@@ -222,12 +223,12 @@ def lab_list_kernels() -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 def lab_create_env(
     name: str,
-    description: Optional[str] = None,
-    python_version: Optional[str] = None,
-    packages: Optional[Union[dict, Sequence[str]]] = None,
-    kernel_name: Optional[str] = None,
+    description: str | None = None,
+    python_version: str | None = None,
+    packages: dict | Sequence[str] | None = None,
+    kernel_name: str | None = None,
     visibility: str = "private",
-    tags: Optional[Sequence[str]] = None,
+    tags: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Create a qBraid environment. Listed ``packages`` install during the
     (async, cloud-side) build — this is the reachable 'install packages into a
@@ -236,7 +237,7 @@ def lab_create_env(
 
     client = _client(_envs())
     # Accept packages as {name: version} or a bare list of names.
-    pkgs: Optional[dict] = None
+    pkgs: dict | None = None
     if packages:
         pkgs = dict(packages) if isinstance(packages, dict) else {str(p): "" for p in packages}
     kwargs: dict[str, Any] = {"name": name, "visibility": visibility}
@@ -330,15 +331,15 @@ def _iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _parse_iso(s: str) -> Optional[datetime]:
+def _parse_iso(s: str) -> datetime | None:
     if not s:
         return None
     try:
         return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort probe; falls back to a safe default
         try:
             return datetime.fromisoformat(s.replace("Z", "+00:00"))
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort probe; falls back to a safe default
             return None
 
 
@@ -362,7 +363,7 @@ def _read_leases() -> dict[str, dict]:
             continue
         try:
             r = json.loads(line)
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 - skip malformed/failed entry, keep processing the rest
             continue
         iid = r.get("instance_id")
         if not iid:
@@ -376,9 +377,9 @@ def _record_lease(
     instance_id: str,
     kind: str,
     *,
-    profile: Optional[str] = None,
-    cluster: Optional[str] = None,
-    ssh_alias: Optional[str] = None,
+    profile: str | None = None,
+    cluster: str | None = None,
+    ssh_alias: str | None = None,
     max_minutes: int = DEFAULT_LEASE_MINUTES,
     event: str = "provision",
 ) -> dict:
@@ -400,7 +401,7 @@ def _record_lease(
     return rec
 
 
-def _lease_for_alias(ssh_alias: str) -> Optional[dict]:
+def _lease_for_alias(ssh_alias: str) -> dict | None:
     for r in _read_leases().values():
         if r.get("ssh_alias") == ssh_alias:
             return r
@@ -421,9 +422,9 @@ DEFAULT_REAP_TERMINATE_GRACE_MIN = 360
 
 def lab_reap(
     dry_run: bool = False,
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
     terminate_stopped: bool = False,
-    terminate_grace_minutes: Optional[int] = None,
+    terminate_grace_minutes: int | None = None,
 ) -> dict[str, Any]:
     """Stop every leased instance/server whose lease has expired — the
     cron/systemd-timer-friendly enforcement of :data:`DEFAULT_LEASE_MINUTES`.
@@ -486,7 +487,7 @@ def lab_reap(
                 client.stop_bma_instance(iid)
             _append_lease({"instance_id": iid, "status": "reaped", "reaped_at": _iso(now), "event": "reap"})
             reaped.append({**entry, "stopped": True})
-        except Exception as e:  # pragma: no cover - live-API variance
+        except Exception as e:  # pragma: no cover - live-API variance  # noqa: BLE001 - boundary: failure is surfaced in structured output
             errors.append({**entry, "error": f"{type(e).__name__}: {e}"})
     for r in reclaimable:
         iid = r["instance_id"]
@@ -506,7 +507,7 @@ def lab_reap(
                  "event": "terminate", "via": "reap"}
             )
             terminated.append({**entry, "terminated": True})
-        except Exception as e:  # pragma: no cover - live-API variance
+        except Exception as e:  # pragma: no cover - live-API variance  # noqa: BLE001 - boundary: failure is surfaced in structured output
             errors.append({**entry, "error": f"{type(e).__name__}: {e}"})
     still_active = [
         {"instance_id": r["instance_id"], "expires_at": r.get("expires_at")}
@@ -548,10 +549,10 @@ def _spend_opt_in(allow_spend: bool, what: str) -> None:
 def _compute_spend_guard(
     client,
     allow_spend: bool,
-    max_credits: Optional[float],
+    max_credits: float | None,
     *,
-    profile_slug: Optional[str] = None,
-    rate: Optional[float] = None,
+    profile_slug: str | None = None,
+    rate: float | None = None,
     what: str = "Starting compute",
 ) -> dict[str, Any]:
     """Gate a paid compute action: explicit opt-in + a committed credit ceiling
@@ -567,7 +568,7 @@ def _compute_spend_guard(
                 rate = float(getattr(pricing, "credit_cost_per_minute", 0) or 0) or None
             if not rate:
                 rate = _rate_to_credits_per_min(getattr(det, "rate_dollar", None), getattr(det, "rate_time_frame", None))
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort probe; falls back to a safe default
             rate = None
     cap = max_credits if max_credits is not None else float(os.environ.get("QBRAID_MAX_CREDITS", LAB_DEFAULT_MAX_CREDITS))
     if cap <= 0:
@@ -602,10 +603,10 @@ def _compute_spend_guard(
 def lab_compute_up(
     profile: str,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
-    cluster: Optional[str] = None,
+    max_credits: float | None = None,
+    cluster: str | None = None,
     wait: bool = False,
-    timeout: Optional[float] = None,
+    timeout: float | None = None,
     max_minutes: int = DEFAULT_LEASE_MINUTES,
 ) -> dict[str, Any]:
     """Start the Lab server on a compute profile (PAID, per-minute). Records a
@@ -628,7 +629,7 @@ def lab_compute_up(
         try:
             st = client.wait_for_server(timeout=timeout) if timeout is not None else client.wait_for_server()
             out["status"] = _dump(st)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - boundary: failure is surfaced in structured output
             out["wait_error"] = f"{type(e).__name__}: {e}"
             out["warning"] = (
                 "The Lab server was STARTED and is billing per minute, but waiting for it to become "
@@ -638,7 +639,7 @@ def lab_compute_up(
     return out
 
 
-def lab_compute_down(cluster: Optional[str] = None) -> dict[str, Any]:
+def lab_compute_down(cluster: str | None = None) -> dict[str, Any]:
     """Stop the running Lab server (disk preserved; stops per-minute billing)."""
     from qbraid_core.services.compute import ComputeClient
 
@@ -649,9 +650,9 @@ def lab_compute_down(cluster: Optional[str] = None) -> dict[str, Any]:
 def lab_provision_instance(
     profile: str,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
+    max_credits: float | None = None,
     wait: bool = False,
-    timeout: Optional[float] = None,
+    timeout: float | None = None,
     max_minutes: int = DEFAULT_LEASE_MINUTES,
 ) -> dict[str, Any]:
     """Provision (launch) a new on-demand compute instance (PAID, per-minute).
@@ -670,7 +671,7 @@ def lab_provision_instance(
     if instance_id:
         try:
             alias = ComputeClient.bma_ssh_alias(instance_id)
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort probe; falls back to a safe default
             alias = None
         lease = _record_lease(
             instance_id, "instance", profile=profile, ssh_alias=alias, max_minutes=max_minutes, event="provision"
@@ -693,7 +694,7 @@ def lab_provision_instance(
             out["instance"] = _dump(
                 client.wait_for_bma_instance(instance_id, timeout=timeout) if timeout is not None else client.wait_for_bma_instance(instance_id)
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - boundary: failure is surfaced in structured output
             out["wait_error"] = f"{type(e).__name__}: {e}"
             out["warning"] = (
                 f"Instance {instance_id} was PROVISIONED and is billing per minute, but waiting for it to "
@@ -706,7 +707,7 @@ def lab_provision_instance(
 def lab_start_instance(
     instance_id: str,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
+    max_credits: float | None = None,
     max_minutes: int = DEFAULT_LEASE_MINUTES,
 ) -> dict[str, Any]:
     """Resume a stopped on-demand instance (PAID, per-minute). Refreshes the
@@ -718,7 +719,7 @@ def lab_start_instance(
     try:
         cur = client.get_bma_instance(instance_id)
         rate = getattr(cur, "running_credits_per_min", None)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort probe; falls back to a safe default
         rate = None
     guard = _compute_spend_guard(
         client, allow_spend, max_credits, rate=rate, what=f"Resuming instance '{instance_id}'"
@@ -726,7 +727,7 @@ def lab_start_instance(
     inst = client.start_bma_instance(instance_id)
     try:
         alias = ComputeClient.bma_ssh_alias(instance_id)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort probe; falls back to a safe default
         alias = None
     lease = _record_lease(instance_id, "instance", ssh_alias=alias, max_minutes=max_minutes, event="start")
     return {"started": True, "instance_id": instance_id, "spend_guard": guard, "lease": lease, "instance": _dump(inst)}
@@ -839,7 +840,7 @@ def _harden_windows_ssh(cfg: dict) -> list[str]:
                 with open(config_file, "w", encoding="utf-8") as f:
                     f.write(new)
                 fixes.append("proxycommand→kannaka-ssh-bridge")
-        except Exception as e:  # pragma: no cover
+        except Exception as e:  # pragma: no cover  # noqa: BLE001 - best-effort probe; falls back to a safe default
             fixes.append(f"proxycommand-rewrite-failed:{e}")
     # 2. Tighten ACLs (must run AFTER the rewrite, which can re-inherit them).
     user = os.environ.get("USERNAME") or os.environ.get("USER") or "%USERNAME%"
@@ -851,7 +852,7 @@ def _harden_windows_ssh(cfg: dict) -> list[str]:
                     capture_output=True, text=True, check=False,
                 )
                 fixes.append(f"acl:{os.path.basename(path)}")
-            except Exception as e:  # pragma: no cover
+            except Exception as e:  # pragma: no cover  # noqa: BLE001 - best-effort probe; falls back to a safe default
                 fixes.append(f"acl-failed:{e}")
     return fixes
 
@@ -880,11 +881,11 @@ def lab_ssh_configure(instance_id: str) -> dict[str, Any]:
 def lab_agent_launch(
     ssh_alias: str,
     tool: str = "claude",
-    instructions: Optional[str] = None,
-    cwd: Optional[str] = None,
-    name: Optional[str] = None,
-    agent_type: Optional[str] = None,
-    tags: Optional[Sequence[str]] = None,
+    instructions: str | None = None,
+    cwd: str | None = None,
+    name: str | None = None,
+    agent_type: str | None = None,
+    tags: Sequence[str] | None = None,
     allow_unleased: bool = False,
 ) -> dict[str, Any]:
     """Launch a coding agent (claude / codex / opencode) ON a remote provisioned
@@ -942,7 +943,7 @@ def _known_hosts_path() -> str:
     d = Path(base)
     try:
         d.mkdir(parents=True, exist_ok=True)
-    except Exception:  # pragma: no cover - falls through to ssh's own error
+    except Exception:  # pragma: no cover - falls through to ssh's own error  # noqa: BLE001, S110 - best-effort; failure here must not break the primary path
         pass
     return str(d / "known_hosts")
 
@@ -991,7 +992,7 @@ def _remote_ssh_py(ssh_alias: str, script: str, stdin: str = "") -> str:
             ssh_alias,
             remote,
         ],
-        input=stdin, capture_output=True, text=True, timeout=90,
+        input=stdin, capture_output=True, text=True, timeout=90, check=False,
     )
     out = (r.stdout or "").strip()
     if r.returncode != 0 and not out:
@@ -999,7 +1000,7 @@ def _remote_ssh_py(ssh_alias: str, script: str, stdin: str = "") -> str:
     return out
 
 
-def _resolve_provider_key(provider: str) -> Optional[str]:
+def _resolve_provider_key(provider: str) -> str | None:
     """Resolve an agent API key: env var → ~/.kannaka/config.toml [llm]."""
     provider = (provider or "anthropic").lower()
     env_name = "OPENAI_API_KEY" if provider in ("openai", "codex") else "ANTHROPIC_API_KEY"
@@ -1014,7 +1015,7 @@ def _resolve_provider_key(provider: str) -> Optional[str]:
             llm = cfg.get("llm", {})
             if str(llm.get("provider", "")).lower() == "anthropic" and llm.get("api_key"):
                 return str(llm["api_key"]).strip()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - best-effort; failure here must not break the primary path
             pass
     return None
 
@@ -1053,7 +1054,7 @@ def lab_agent_setup(
     ssh_alias: str,
     provider: str = "anthropic",
     model: str = "claude-sonnet-4-6",
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     i_know: bool = False,
 ) -> dict[str, Any]:
     """Prepare a remote instance so a launched claude agent runs AUTONOMOUSLY:
@@ -1182,7 +1183,7 @@ def _remote_ssh_sh(ssh_alias: str, command: str, timeout: int = 90, stdin: str =
             ssh_alias,
             remote,
         ],
-        input=stdin, capture_output=True, text=True, timeout=timeout,
+        input=stdin, capture_output=True, text=True, timeout=timeout, check=False,
     )
 
 
@@ -1405,12 +1406,12 @@ def _qos_booted(lines: list[str]) -> bool:
 def lab_qos_boot(
     ssh_alias: str,
     repo: str = QOS_DEFAULT_REPO,
-    ref: Optional[str] = None,
+    ref: str | None = None,
     session: str = "qos",
     fresh: bool = False,
     allow_unleased: bool = False,
     timeout_secs: int = 540,
-    qseed: Optional[str] = None,
+    qseed: str | None = None,
     graphical: bool = False,
     network: bool = False,
     quiet: bool = False,
@@ -1463,7 +1464,7 @@ def lab_qos_boot(
     bound. Override deliberately with ``allow_unleased=True``."""
     if not session.replace("-", "").replace("_", "").isalnum():
         raise RuntimeError(f"lab_qos_boot: invalid tmux session name '{session}'")
-    qseed_hex: Optional[str] = None
+    qseed_hex: str | None = None
     qseed_provenance = None
     if qseed:
         if qseed == "reservoir":
@@ -1681,7 +1682,7 @@ def lab_watch(
     session: str = "qos",
     web_port: int = QOS_DEFAULT_WEB_PORT,
     monitor_port: int = QOS_DEFAULT_MONITOR_PORT,
-    local_port: Optional[int] = None,
+    local_port: int | None = None,
     resume: bool = True,
     open_browser: bool = True,
 ) -> dict[str, Any]:
@@ -1696,7 +1697,7 @@ def lab_watch(
     the URL + tunnel PID. Text-mode /qos doesn't need this (attach the tmux
     serial console instead)."""
     local_port = int(local_port or web_port)
-    resumed: Optional[bool] = None
+    resumed: bool | None = None
     if resume:
         resumed = lab_qos_resume(ssh_alias, monitor_port)["resumed"]
 
@@ -1754,12 +1755,12 @@ def _kannaka_nats_env() -> dict[str, str]:
 def lab_qos_swarm_bridge(
     ssh_alias: str,
     session: str = "qos",
-    qseed: Optional[str] = None,
-    agent_id: Optional[str] = None,
-    com2_path: Optional[str] = None,
+    qseed: str | None = None,
+    agent_id: str | None = None,
+    com2_path: str | None = None,
     verify_timeout: float = 25.0,
     relay_secs: float = 8.0,
-    kannaka_bin: Optional[str] = None,
+    kannaka_bin: str | None = None,
 ) -> dict[str, Any]:
     """Wire a booted QuantumOS instance onto the NATS swarm under its own
     Lamport-signed identity — the Option B capstone of the ghostd/QuantumOS work
@@ -1786,7 +1787,7 @@ def lab_qos_swarm_bridge(
     from . import qos_bridge
 
     com2 = com2_path or f"/tmp/qos-com2-{session}.log"
-    expected: Optional[str] = None
+    expected: str | None = None
     if qseed and qseed.lower() != "reservoir":
         expected = qseed.lower().removeprefix("0x")
     kbin = kannaka_bin or os.environ.get("KANNAKA_BIN") or "kannaka"

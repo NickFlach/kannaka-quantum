@@ -216,7 +216,7 @@ def test_bridge_derives_node_from_qseed_when_unset():
     sink = qb.CaptureSink()
     bridge = qb.QosBridge(sink=sink, node=None, expected_qseed=QSEED)
     bridge.feed(QSEED_CAP.read_bytes())
-    ev = [e for e in sink.events if e["subject"].endswith(".attest")][0]
+    ev = next(e for e in sink.events if e["subject"].endswith(".attest"))
     assert ev["subject"] == f"KANNAKA.qos.qos-{QSEED.lower()}.attest"
 
 

@@ -27,7 +27,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from . import core
 
@@ -84,7 +84,7 @@ def _consumed_bytes() -> int:
         return 0
     try:
         return int(json.loads(p.read_text()).get("consumed_bytes", 0))
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort probe; falls back to a safe default
         return 0
 
 
@@ -114,7 +114,7 @@ def _read_meta() -> list[dict[str, Any]]:
             continue
         try:
             e = json.loads(line)
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 - skip malformed/failed entry, keep processing the rest
             continue
         nbytes = int(e.get("bytes", 0))
         e["abs_start"] = offset
@@ -147,7 +147,7 @@ def _bits_to_bytes(bitstr: str) -> bytes:
     return int(bitstr[:n], 2).to_bytes(n // 8, "big")
 
 
-def _harvest_cost_usd(device: str, n_bits: int) -> Optional[float]:
+def _harvest_cost_usd(device: str, n_bits: int) -> float | None:
     """Best-effort per-refill cost, mirroring qrng's shot math + the OQ price table."""
     if not device.startswith(core.OPENQUANTUM_PREFIX):
         return None
@@ -234,8 +234,8 @@ def harvest(
     n_bits: int = DEFAULT_HARVEST_BITS,
     device: str = DEFAULT_HARVEST_DEVICE,
     allow_spend: bool = False,
-    max_credits: Optional[float] = None,
-    subcategory: Optional[str] = None,
+    max_credits: float | None = None,
+    subcategory: str | None = None,
 ) -> dict[str, Any]:
     """Run ``qrng`` on a REAL QPU and append the raw bits to the reservoir.
 

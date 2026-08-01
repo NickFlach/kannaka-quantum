@@ -31,8 +31,7 @@ def _seed_reservoir(data: bytes, harvests):
     """Directly write reservoir.bin + meta.jsonl (bypasses the QPU) for draw tests."""
     entropy._reservoir_path().write_bytes(data)
     with open(entropy._meta_path(), "w", encoding="utf-8") as f:
-        for h in harvests:
-            f.write(json.dumps(h) + "\n")
+        f.writelines(json.dumps(h) + "\n" for h in harvests)
 
 
 # ── T1.1: harvest ──────────────────────────────────────────────────────────

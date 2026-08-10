@@ -151,6 +151,16 @@ def build_parser() -> argparse.ArgumentParser:
     bl.add_argument("--shots", type=int, default=4096, help="shots per CHSH setting (default 4096)")
     _add_spend_opts(bl)
 
+    ph = sub.add_parser(
+        "phantom",
+        help="phantom-injection experiment: local hidden-cause links never exceed S = 2 ($0, offline)",
+    )
+    ph.add_argument("--strategies", default=None, help="JSON list or CSV of injection strategies (default: all)")
+    ph.add_argument("--couplings", default=None, help="JSON list or CSV of coupling strengths in [0,1] (default 0.25,0.5,1.0)")
+    ph.add_argument("--shots", type=int, default=4096, help="hidden-cause draws per run (default 4096)")
+    ph.add_argument("--bins", type=int, default=None, help="rounding precision: phase bins (default 8; fewer = coarser)")
+    ph.add_argument("--seed", type=int, default=5, help="deterministic RNG seed")
+
     # --- qBraid Lab / infrastructure ---------------------------------------
     sub.add_parser("lab-credits", help="show qBraid credit balance")
 
@@ -600,6 +610,17 @@ def main(argv: list[str] | None = None) -> int:
                 allow_spend=args.allow_spend,
                 max_credits=args.max_credits,
                 subcategory=args.subcategory,
+            )
+        elif args.cmd == "phantom":
+            from . import phantom
+
+            couplings = _parse_json_arg(args.couplings)
+            out = phantom.inject(
+                strategies=_parse_strs(args.strategies),
+                couplings=[float(c) for c in couplings] if couplings else None,
+                shots=args.shots,
+                bins=args.bins if args.bins is not None else phantom.DEFAULT_BINS,
+                seed=args.seed,
             )
         elif args.cmd == "bench":
             # Prints the result JSON like every other command, but the exit code

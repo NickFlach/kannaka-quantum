@@ -234,10 +234,18 @@ Even if GH wins, the environment doubles as the T2/T3 quantum-test bed.
 
 CHSH experiment as a first-class tool: prepare the singlet, measure at the
 four canonical angle pairs, compute S. Simulator should give S ≈ 2√2 ≈ 2.83;
-one guarded hardware run (~$0.25 on IQM Garnet) records real-device S with
-noise. JSON output like every other subcommand.
+one guarded hardware run records real-device S with noise. JSON output like
+every other subcommand.
 
 **AC:** sim S > 2.7; one hardware S committed with cost; classical bound (2) asserted violated.
+
+**Done** (2026-08-10). Sim `S = 2.856`; hardware `S = 2.238 ± 0.073` — the
+classical bound violated by 3.3σ. The run went to
+`aws:rigetti:qpu:cepheus-1-108q` (512 shots × 4 settings, 207.04 credits /
+$2.07), not the planned IQM Garnet: Garnet is back online, but OpenQuantum's
+Spark balance is 0 and that path prices jobs off a provider quote rather than
+live metadata, so its cost could not be bounded from existing credits. Ledger
+row 2; analysis in `genuine-vs-phantom-entanglement.md` §2.
 
 ### T5.2 · Analysis + Episode: genuine vs phantom entanglement
 **Labels:** `phantom` `paper` `wave-3` · **Depends:** T5.1

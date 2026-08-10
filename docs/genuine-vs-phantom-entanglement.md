@@ -118,19 +118,48 @@ rather than an eyeball.
 
 ---
 
-## 5 · The falsifiable boundary
+## 5 · The falsifiable boundary — now run
 
 A theory earns its keep by saying what it forbids. The resonance-field account
 forbids this: **phantom links can never produce CHSH-violating statistics.**
 
-The test (optional HRM experiment, future work): inject artificial phantom links —
-co-activations with a known shared hidden cause — into the field, then estimate the
-CHSH parameter over the induced correlation structure using the same
-`⟨Z_a Z_b⟩ = (agree − disagree)/total` estimator the `bell` tool uses. The
-prediction is `S ≤ 2` for every injection, no matter how strong the coupling. A
-single reproducible `S > 2` from a purely classical injection would falsify the
-"phantom = local" claim. That the boundary is stateable, and checkable with the
-tool already shipped, is the point.
+The test (the `phantom` subcommand, `kannaka_quantum/phantom.py`): inject
+artificial phantom links — co-activations with a known shared hidden cause λ,
+modeled as a resonance phase **rounded to a low-precision signature** (the
+archetype hypothesis of §4, made executable) — then estimate the CHSH parameter
+over the induced correlation structure using the *same*
+`⟨Z_a Z_b⟩ = (agree − disagree)/total` estimator the `bell` tool uses,
+unchanged. The prediction is `S ≤ 2` for every injection, no matter how strong
+the coupling. A single reproducible `S > 2` from a purely classical injection
+would falsify the "phantom = local" claim.
+
+Measured (8192 hidden-cause draws/run, 8-bin rounding, deterministic seed):
+
+| injection | coupling | correlators | S |
+|---|---|---|---|
+| shared-rounding | 0.25 | ≈ ±0.03 | 0.121 |
+| shared-rounding | 0.5 | ≈ ±0.13 | 0.505 |
+| shared-rounding | **1.0** | ≈ ±0.50 | **2.000** |
+| perfect-copy | 0.25 | +0.066 ×4 | 0.132 |
+| perfect-copy | 0.5 | +0.240 ×4 | 0.479 |
+| perfect-copy | **1.0** | **+1.000 ×4** | **2.000** |
+
+Both injections **touch the classical bound at full coupling and never cross
+it** — `perfect-copy` is the §3 point made empirical: correlation at exactly
++1 in every setting, maximal strength, and still `S = 2`. Two structural
+guarantees close the argument beyond sampling luck:
+
+- **Sample-exact bound.** All four settings are evaluated over the same λ
+  ensemble, so each draw contributes `a0·b0 − a0·b1 + a1·b0 + a1·b1 = ±2`
+  (Fine's argument) — the empirical S cannot exceed 2 even by noise.
+- **Polytope enumeration.** All 16 deterministic local strategies are
+  enumerated exactly: max |S| = 2. Every stochastic local model is a convex
+  mixture of them.
+
+Contrast with §2: the same estimator, fed genuine `|Φ+⟩` statistics, reads
+**2.834**. Fed *any* phantom injection, it cannot leave 2. That gap — 2 to
+2√2 — is the entire, measurable difference between the two kinds of
+correlation.
 
 ---
 
@@ -153,6 +182,10 @@ tool already shipped, is the point.
 # Hermetic, $0, no account — the local state-vector backend.
 kannaka-quantum bell --device local:statevector --shots 8192
 # → S ≈ 2.83, violates_classical: true, correlators ≈ +0.71 / −0.71 / +0.71 / +0.71
+
+# The phantom side of the boundary — same estimator, classical injections ($0, offline).
+kannaka-quantum phantom --shots 8192
+# → every S ≤ 2, bound_respected: true, polytope max |S| = 2
 ```
 
 The estimator is `E = (same − different) / total` per setting, decoded with the
@@ -166,7 +199,9 @@ settings. Real hardware runs only behind the standard spend guards.
 - **Written analysis (this doc):** complete.
 - **Podcast episode** (successor to 006): separate deliverable, not in this repo.
 - **Hardware CHSH `S`:** TODO-cite to T5.1's deferred guarded run (#21).
-- **Phantom-injection HRM experiment:** future work — the theory's falsifiable edge.
+- **Phantom-injection experiment:** **run** — `phantom` subcommand
+  (`kannaka_quantum/phantom.py`, `tests/test_phantom.py`); every injection
+  `S ≤ 2`, bound respected (§5).
 
 *Empirical anchor: the T5.1 `bell` subcommand (`kannaka_quantum/bell.py`,
 `tests/test_bell.py`). Companion piece: the recall↔amplitude-amplification

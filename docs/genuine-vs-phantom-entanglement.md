@@ -64,12 +64,34 @@ Tsirelson (2.828) within sampling tolerance. `violates_classical: true`. This is
 genuine entanglement, measured, not asserted: three correlators near `+1/√2`, one
 near `−1/√2`, exactly the fingerprint of `|Φ+⟩` and nothing a local model can fake.
 
-**Hardware (TODO-cite, deferred).** T5.1 deferred the one guarded real-device run
-(~$0.25 on IQM Garnet, gated on an OpenQuantum top-up; see #21). When it lands,
-cite the real-device `S` here — expected `2 < S_hw < 2.83`: reduced by noise but,
-crucially, **still above the classical bound**, the way the shallow Bell benchmark
-already survives real hardware at ~94.5% fidelity. Noise erodes genuine
-entanglement toward the bound; it does not turn phantom correlation into genuine.
+**Hardware (measured, 2026-08-10).** The guarded real-device run landed on
+`aws:rigetti:qpu:cepheus-1-108q` — 512 shots × 4 settings, 207.04 qBraid credits
+($2.07). (It did *not* run on IQM Garnet: Garnet is back online, but OpenQuantum's
+Spark balance is 0 and that path prices jobs off a quote rather than live metadata,
+so the run went to the cheapest unambiguously-priced QPU instead. See #21.)
+
+| setting | correlator (hardware) | ideal `cos(2Δθ)` |
+|---|---|---|
+| a0·b0 | **+0.645** | +0.707 |
+| a0·b1 | **−0.387** | −0.707 |
+| a1·b0 | **+0.543** | +0.707 |
+| a1·b1 | **+0.664** | +0.707 |
+
+```
+S_hw = 0.645 − (−0.387) + 0.543 + 0.664 = 2.238 ± 0.073
+```
+
+**S_hw ≈ 2.238 > 2** — the classical bound survives contact with a real, noisy
+108-qubit superconducting chip, violated by **3.3σ** (`SE_S ≈ 0.073` from
+`SE_E = √((1−E²)/N)` per setting, summed in quadrature). That is 79% of Tsirelson,
+landing exactly in the predicted `2 < S_hw < 2.83` window: every correlator is
+pulled toward zero by decoherence — `a0·b1` worst, at just over half its ideal
+magnitude — yet the combination still clears the bound.
+
+This is the load-bearing empirical point. **Noise erodes genuine entanglement
+toward the classical bound; it does not turn phantom correlation into genuine.**
+A local hidden-variable model cannot reach 2.238 no matter how it is tuned, so
+whatever the decoherence did to this state, it did not manufacture the violation.
 
 ---
 
@@ -186,11 +208,28 @@ kannaka-quantum bell --device local:statevector --shots 8192
 # The phantom side of the boundary — same estimator, classical injections ($0, offline).
 kannaka-quantum phantom --shots 8192
 # → every S ≤ 2, bound_respected: true, polytope max |S| = 2
+
+# Free hosted simulator — same submission path as hardware, still $0.
+kannaka-quantum bell --device qbraid:qbraid:sim:qir-sv --shots 512
+# → S ≈ 2.86
+
+# The §2 hardware run. SPENDS CREDITS: 207.04 qBraid credits ($2.07).
+# --max-credits is enforced PER SETTING, so the true ceiling is 4 × 60 = 240 credits.
+kannaka-quantum bell --device aws:rigetti:qpu:cepheus-1-108q --shots 512 \
+  --allow-spend --max-credits 60
+# → S ≈ 2.24, violates_classical: true
 ```
 
 The estimator is `E = (same − different) / total` per setting, decoded with the
 same device-aware bit-ordering the recall path uses; `S` combines the four
 settings. Real hardware runs only behind the standard spend guards.
+
+Two things to know before repeating the hardware run. `bell` submits **four
+separate jobs**, one per setting, so a per-task fee is paid four times — on
+Cepheus that is 120 of the 207 credits before a single shot, which is why 512
+shots/setting costs only ~27% more than 250 and buys √2 the precision. And the
+statistical error matters at these `S` values: 512 shots/setting gives 3.3σ over
+the classical bound, where 250 would have given a marginal 2.3σ.
 
 ---
 
@@ -198,7 +237,8 @@ settings. Real hardware runs only behind the standard spend guards.
 
 - **Written analysis (this doc):** complete.
 - **Podcast episode** (successor to 006): separate deliverable, not in this repo.
-- **Hardware CHSH `S`:** TODO-cite to T5.1's deferred guarded run (#21).
+- **Hardware CHSH `S`:** complete — `S = 2.238 ± 0.073` on
+  `aws:rigetti:qpu:cepheus-1-108q`, 2026-08-10, 207.04 credits ($2.07); see §2.
 - **Phantom-injection experiment:** **run** — `phantom` subcommand
   (`kannaka_quantum/phantom.py`, `tests/test_phantom.py`); every injection
   `S ≤ 2`, bound respected (§5).

@@ -1,0 +1,468 @@
+{
+ "device": "rigetti:rigetti:qpu:cepheus-1-108q",
+ "protocol": "ADR-0002 controlled-delay",
+ "qubit": 1,
+ "shots": 200,
+ "delays_us": [
+  0.0,
+  2.0,
+  5.0,
+  10.0,
+  20.0,
+  50.0,
+  100.0
+ ],
+ "arms": [
+  "t1",
+  "ramsey",
+  "echo"
+ ],
+ "abort_check": {
+  "p1_at_0": 0.93,
+  "p1_at_longest": 0.15,
+  "delta": 0.78,
+  "threshold": 0.1,
+  "aborted": false
+ },
+ "jobs": [
+  {
+   "arm": "t1",
+   "delay_us": 0.0,
+   "shots": 200,
+   "counts": {
+    "0": 14,
+    "1": 186
+   },
+   "p1": 0.93,
+   "se": 0.01804161855266871,
+   "credits": 12.1032,
+   "exec_ms": 60,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e58f61a110a0a39e1c7b7",
+   "wall_s": 18.5,
+   "quil": "DECLARE ro BIT[1]\nRX(pi) 1\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "t1",
+   "delay_us": 100.0,
+   "shots": 200,
+   "counts": {
+    "0": 170,
+    "1": 30
+   },
+   "p1": 0.15,
+   "se": 0.025248762345905194,
+   "credits": 15.6968,
+   "exec_ms": 78,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e59071a110a0a39e1c7bd",
+   "wall_s": 11.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi) 1\nDELAY 1 0.0001\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "ramsey",
+   "delay_us": 0.0,
+   "shots": 200,
+   "counts": {
+    "0": 15,
+    "1": 185
+   },
+   "p1": 0.925,
+   "se": 0.01862458053218917,
+   "credits": 11.316199999999998,
+   "exec_ms": 56,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e59121a110a0a39e1c7c1",
+   "wall_s": 11.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 1\nRX(pi/2) 1\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "echo",
+   "delay_us": 0.0,
+   "shots": 200,
+   "counts": {
+    "0": 188,
+    "1": 12
+   },
+   "p1": 0.06,
+   "se": 0.016792855623746664,
+   "credits": 11.1506,
+   "exec_ms": 55,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e591e1a110a0a39e1c7c6",
+   "wall_s": 11.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 1\nRX(pi) 1\nRX(pi/2) 1\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "t1",
+   "delay_us": 2.0,
+   "shots": 200,
+   "counts": {
+    "0": 30,
+    "1": 170
+   },
+   "p1": 0.85,
+   "se": 0.025248762345905194,
+   "credits": 11.6394,
+   "exec_ms": 58,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e59291a110a0a39e1c7ca",
+   "wall_s": 6.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi) 1\nDELAY 1 0.000001984\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "ramsey",
+   "delay_us": 2.0,
+   "shots": 200,
+   "counts": {
+    "0": 79,
+    "1": 121
+   },
+   "p1": 0.605,
+   "se": 0.03456696399743547,
+   "credits": 11.6108,
+   "exec_ms": 58,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e592f1a110a0a39e1c7ce",
+   "wall_s": 11.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 1\nDELAY 1 0.000001984\nRX(pi/2) 1\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "echo",
+   "delay_us": 2.0,
+   "shots": 200,
+   "counts": {
+    "0": 156,
+    "1": 44
+   },
+   "p1": 0.22,
+   "se": 0.02929163703175362,
+   "credits": 11.5928,
+   "exec_ms": 57,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e593b1a110a0a39e1c7d2",
+   "wall_s": 6.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 1\nDELAY 1 0.000000992\nRX(pi) 1\nDELAY 1 0.000000992\nRX(pi/2) 1\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "t1",
+   "delay_us": 5.0,
+   "shots": 200,
+   "counts": {
+    "0": 48,
+    "1": 152
+   },
+   "p1": 0.76,
+   "se": 0.030199337741083,
+   "credits": 11.4624,
+   "exec_ms": 57,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e59411a110a0a39e1c7d6",
+   "wall_s": 11.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi) 1\nDELAY 1 0.000004992\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "ramsey",
+   "delay_us": 5.0,
+   "shots": 200,
+   "counts": {
+    "0": 119,
+    "1": 81
+   },
+   "p1": 0.405,
+   "se": 0.0347113093962184,
+   "credits": 11.726799999999999,
+   "exec_ms": 58,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e594c1a110a0a39e1c7da",
+   "wall_s": 11.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 1\nDELAY 1 0.000004992\nRX(pi/2) 1\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "echo",
+   "delay_us": 5.0,
+   "shots": 200,
+   "counts": {
+    "0": 139,
+    "1": 61
+   },
+   "p1": 0.305,
+   "se": 0.03255572146336186,
+   "credits": 11.3698,
+   "exec_ms": 56,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e59581a110a0a39e1c7de",
+   "wall_s": 11.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 1\nDELAY 1 0.000002496\nRX(pi) 1\nDELAY 1 0.000002496\nRX(pi/2) 1\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "t1",
+   "delay_us": 10.0,
+   "shots": 200,
+   "counts": {
+    "0": 49,
+    "1": 151
+   },
+   "p1": 0.755,
+   "se": 0.030411757594719844,
+   "credits": 11.8404,
+   "exec_ms": 59,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e59631a110a0a39e1c7e2",
+   "wall_s": 6.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi) 1\nDELAY 1 0.000009984\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "ramsey",
+   "delay_us": 10.0,
+   "shots": 200,
+   "counts": {
+    "0": 130,
+    "1": 70
+   },
+   "p1": 0.35,
+   "se": 0.033726843908080104,
+   "credits": 11.8514,
+   "exec_ms": 59,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e59691a110a0a39e1c7e6",
+   "wall_s": 11.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 1\nDELAY 1 0.000009984\nRX(pi/2) 1\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "echo",
+   "delay_us": 10.0,
+   "shots": 200,
+   "counts": {
+    "0": 118,
+    "1": 82
+   },
+   "p1": 0.41,
+   "se": 0.0347778665245584,
+   "credits": 11.7814,
+   "exec_ms": 58,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e59751a110a0a39e1c7ea",
+   "wall_s": 11.5,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 1\nDELAY 1 0.000004992\nRX(pi) 1\nDELAY 1 0.000004992\nRX(pi/2) 1\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "t1",
+   "delay_us": 20.0,
+   "shots": 200,
+   "counts": {
+    "0": 99,
+    "1": 101
+   },
+   "p1": 0.505,
+   "se": 0.03535357124817803,
+   "credits": 12.0186,
+   "exec_ms": 60,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e59801a110a0a39e1c7ef",
+   "wall_s": 11.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi) 1\nDELAY 1 0.00002\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "ramsey",
+   "delay_us": 20.0,
+   "shots": 200,
+   "counts": {
+    "0": 102,
+    "1": 98
+   },
+   "p1": 0.49,
+   "se": 0.03534826728426727,
+   "credits": 12.3636,
+   "exec_ms": 61,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e598c1a110a0a39e1c7f3",
+   "wall_s": 6.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 1\nDELAY 1 0.00002\nRX(pi/2) 1\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "echo",
+   "delay_us": 20.0,
+   "shots": 200,
+   "counts": {
+    "0": 103,
+    "1": 97
+   },
+   "p1": 0.485,
+   "se": 0.03533942557541082,
+   "credits": 12.28,
+   "exec_ms": 61,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e59921a110a0a39e1c7f7",
+   "wall_s": 11.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 1\nDELAY 1 0.000009984\nRX(pi) 1\nDELAY 1 0.000009984\nRX(pi/2) 1\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "t1",
+   "delay_us": 50.0,
+   "shots": 200,
+   "counts": {
+    "0": 132,
+    "1": 68
+   },
+   "p1": 0.34,
+   "se": 0.03349626844888845,
+   "credits": 13.522599999999999,
+   "exec_ms": 67,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e599d1a110a0a39e1c7fb",
+   "wall_s": 11.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi) 1\nDELAY 1 0.000049984\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "ramsey",
+   "delay_us": 50.0,
+   "shots": 200,
+   "counts": {
+    "0": 87,
+    "1": 113
+   },
+   "p1": 0.565,
+   "se": 0.03505531343462785,
+   "credits": 13.5344,
+   "exec_ms": 67,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e59a91a110a0a39e1c802",
+   "wall_s": 11.5,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 1\nDELAY 1 0.000049984\nRX(pi/2) 1\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "echo",
+   "delay_us": 50.0,
+   "shots": 200,
+   "counts": {
+    "0": 102,
+    "1": 98
+   },
+   "p1": 0.49,
+   "se": 0.03534826728426727,
+   "credits": 13.2308,
+   "exec_ms": 66,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e59b41a110a0a39e1c808",
+   "wall_s": 11.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 1\nDELAY 1 0.000024992\nRX(pi) 1\nDELAY 1 0.000024992\nRX(pi/2) 1\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "ramsey",
+   "delay_us": 100.0,
+   "shots": 200,
+   "counts": {
+    "0": 97,
+    "1": 103
+   },
+   "p1": 0.515,
+   "se": 0.03533942557541082,
+   "credits": 15.1318,
+   "exec_ms": 75,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e59c01a110a0a39e1c811",
+   "wall_s": 11.9,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 1\nDELAY 1 0.0001\nRX(pi/2) 1\nMEASURE 1 ro[0]\n"
+  },
+  {
+   "arm": "echo",
+   "delay_us": 100.0,
+   "shots": 200,
+   "counts": {
+    "0": 97,
+    "1": 103
+   },
+   "p1": 0.515,
+   "se": 0.03533942557541082,
+   "credits": 15.572799999999999,
+   "exec_ms": 77,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e59cb1a110a0a39e1c815",
+   "wall_s": 11.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 1\nDELAY 1 0.000049984\nRX(pi) 1\nDELAY 1 0.000049984\nRX(pi/2) 1\nMEASURE 1 ro[0]\n"
+  }
+ ],
+ "curves": {
+  "t1": {
+   "points": [
+    [
+     0.0,
+     0.93
+    ],
+    [
+     2.0,
+     0.85
+    ],
+    [
+     5.0,
+     0.76
+    ],
+    [
+     10.0,
+     0.755
+    ],
+    [
+     20.0,
+     0.505
+    ],
+    [
+     50.0,
+     0.34
+    ],
+    [
+     100.0,
+     0.15
+    ]
+   ],
+   "half_life_us": 18.599999999999998
+  },
+  "ramsey": {
+   "points": [
+    [
+     0.0,
+     0.925
+    ],
+    [
+     2.0,
+     0.605
+    ],
+    [
+     5.0,
+     0.405
+    ],
+    [
+     10.0,
+     0.35
+    ],
+    [
+     20.0,
+     0.49
+    ],
+    [
+     50.0,
+     0.565
+    ],
+    [
+     100.0,
+     0.515
+    ]
+   ],
+   "half_life_us": 1.2812500000000002
+  },
+  "echo": {
+   "points": [
+    [
+     0.0,
+     0.06
+    ],
+    [
+     2.0,
+     0.22
+    ],
+    [
+     5.0,
+     0.305
+    ],
+    [
+     10.0,
+     0.41
+    ],
+    [
+     20.0,
+     0.485
+    ],
+    [
+     50.0,
+     0.49
+    ],
+    [
+     100.0,
+     0.515
+    ]
+   ],
+   "half_life_us": 4.3823529411764754
+  }
+ },
+ "credits_total": 262.797,
+ "status": "complete"
+}

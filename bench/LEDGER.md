@@ -73,6 +73,21 @@ passed first, for $0.19. Sweep: qubit 0, delays 0/2/5/10/20/50/100 µs, 300 shot
 All three pre-registered predictions held: t1 monotone with its half-way inside 5–60 µs; ramsey
 faster than t1; echo slower than ramsey (one mid-interval π pulse doubles the phase lifetime).
 No refutation fired. Data: `bench/decay-20260907T055501Z.json` (every job id, count table, credits).
+### Qubit-to-qubit variation (same protocol, 200 shots per point on qubits 1 and 2)
+
+| qubit | shots | P(1) at 0 µs | t1 half-way µs | ramsey half-way µs | echo half-way µs | echo / ramsey | cost $ | data |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 300 | 0.92 | 27.9 | 6.1 | 12.5 | 2.1 | 3.60 | `decay-20260907T055501Z.json` |
+| 1 | 200 | 0.93 | 18.6 | 1.3 | 4.4 | 3.4 | 2.63 | `decay-20260907T062942Z.json` |
+| 2 | 200 | 0.66 | 1.6 | 1.1 | 1.0 | 0.9 | 2.73 | `decay-20260907T063309Z.json` |
+
+Qubit 2 is a bad qubit today: only 0.66 of shots read |1⟩ with no delay at all, and its
+population is gone within a few microseconds, so no rehearsal signal can be read from it. On
+the two usable qubits the pre-registered ordering holds (ramsey < echo < t1), with the echo
+gain 2.0× on qubit 0 and 3.4× on qubit 1. Neighbouring qubits differ by more than an order of
+magnitude, so any future run must gate qubits on a zero-delay readout check first
+(suggested: skip a qubit with P(1) at 0 µs below 0.85).
+
 Reproduce (from a box with pyquil, e.g. debain2 `~/pyquil-venv`; the Windows box cannot build `quil`):
 
 ```bash
@@ -115,9 +130,8 @@ KANNAKA_QUANTUM_ALLOW_SPEND=1 kannaka-quantum bench \
 50 scenarios × 128 shots × $0.000255/shot ≈ **$1.63**. (OpenQuantum bills in Spark credits, 1 credit = $2; the free tier is 25 credits / $50 per 90 days.) Run this once the OpenQuantum account is topped up to add a full-corpus hardware row.
 
 ### Notes
-- Per-minute-billed devices (native `rigetti:rigetti:*` at ~$120/min) are refused outright by the spend guard — always use per-shot devices.
+- Per-minute-billed devices (native `rigetti:rigetti:*`, ~$120/min prorated to execution time) need `--max-seconds` (ADR-0002); they are the only route that executes `DELAY`. A 100-shot job is about $0.07.
 - The CHSH `bell` hardware run (T5.1) landed as **row 2** on 2026-08-10.
-- OpenQuantum's Spark balance is **0** as of 2026-08-10, so every `openquantum:*`
-  runbook entry above is blocked on a top-up regardless of device availability.
+- OpenQuantum's Spark balance was 0 on 2026-08-10; funded again 2026-09-07. Plain circuits run there (Bell pair 93 % correct parity for $0.03); `DELAY` is rejected ("Delay is not supported").
 - `bell` submits one job **per CHSH setting** (4 tasks), and `--max-credits` is
   enforced per task — multiply by 4 to get the real ceiling.

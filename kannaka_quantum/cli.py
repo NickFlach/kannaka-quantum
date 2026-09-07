@@ -53,6 +53,9 @@ def _add_spend_opts(p: argparse.ArgumentParser) -> None:
     """
     p.add_argument("--allow-spend", action="store_true", help="permit a credit-spending OpenQuantum run")
     p.add_argument("--max-credits", type=float, default=None, help="credit ceiling for an OpenQuantum run (default 1.0)")
+    p.add_argument("--max-seconds", type=float, default=None,
+                   help="accept a per-minute-billed qBraid device (native Rigetti) by bounding wall-clock "
+                        "execution; ceiling = rate*seconds/60 credits, must fit under --max-credits (ADR-0002)")
     p.add_argument("--subcategory", default=None, help="OpenQuantum job_subcategory_id workload tag")
 
 
@@ -553,6 +556,7 @@ def main(argv: list[str] | None = None) -> int:
                 shots=args.shots,
                 allow_spend=args.allow_spend,
                 max_credits=args.max_credits,
+                max_seconds=getattr(args, "max_seconds", None),
                 subcategory=args.subcategory,
             )
         elif args.cmd == "qrng":

@@ -73,8 +73,8 @@ OQ_DEFAULT_SUBCATEGORY = "phys:oth"
 #: qBraid credits are $0.01 each; real QPUs expose live per-task/per-shot/per-minute
 #: pricing in device metadata. Default ceiling 200 credits (≈ $2), matching the
 #: OpenQuantum default. Per-minute-billed devices (e.g. native Rigetti at 12000
-#: credits/min ≈ $120/min) are refused outright — their cost can't be bounded from
-#: a shot count.
+#: credits/min ≈ $120/min) are refused unless the caller bounds wall-clock time
+#: with max_seconds (ADR-0002); they bill actual execution time, prorated.
 QBRAID_USD_PER_CREDIT = 0.01
 QBRAID_DEFAULT_MAX_CREDITS = 200.0
 
@@ -365,13 +365,18 @@ def _counts_from_result(res: Any) -> dict[str, int]:
 
 
 def _qbraid_spend_guard(
-    pricing: dict, device: str, shots: int, allow_spend: bool, max_credits: float | None
+    pricing: dict, device: str, shots: int, allow_spend: bool, max_credits: float | None,
+    max_seconds: float | None = None,
 ) -> dict[str, Any]:
     """Gate a real (non-simulator) qBraid run on an explicit spend opt-in + a
     credit ceiling, using the device's live pricing metadata.
 
-    Refuses per-minute-billed devices outright (cost unbounded by shot count —
-    this is the native-Rigetti $120/min trap). Raises on opt-out / over-cap;
+    Per-minute-billed devices (the native Rigetti path, ~12000 credits/min) are
+    refused unless the caller also passes ``max_seconds``: the accepted
+    wall-clock bound. The ceiling ``per_min * max_seconds / 60`` must fit under
+    the credit cap (ADR-0002). The device bills actual execution time, prorated,
+    so the ceiling is the bound you accept, not the expected cost — a 1,000-shot
+    job runs tens to hundreds of milliseconds. Raises on opt-out / over-cap;
     returns the estimate otherwise.
     """
     if not (allow_spend or os.environ.get("KANNAKA_QUANTUM_ALLOW_SPEND") == "1"):
@@ -383,15 +388,32 @@ def _qbraid_spend_guard(
     per_task = float(pricing.get("perTask") or 0.0)
     per_shot = float(pricing.get("perShot") or 0.0)
     per_min = float(pricing.get("perMinute") or 0.0)
-    if per_min > 0:
-        raise RuntimeError(
-            f"{device} bills per-minute ({per_min:g} credits/min ≈ ${per_min * QBRAID_USD_PER_CREDIT:.0f}/min) — "
-            "cost cannot be bounded from a shot count, so it is refused. Choose a per-shot device "
-            "(e.g. aws:rigetti:qpu:cepheus-1-108q or aws:ionq:qpu:forte-1)."
-        )
     cap = max_credits if max_credits is not None else float(
         os.environ.get("QBRAID_MAX_CREDITS", QBRAID_DEFAULT_MAX_CREDITS)
     )
+    if per_min > 0:
+        if max_seconds is None or float(max_seconds) <= 0:
+            raise RuntimeError(
+                f"{device} bills per-minute ({per_min:g} credits/min ≈ ${per_min * QBRAID_USD_PER_CREDIT:.0f}/min) — "
+                "cost cannot be bounded from a shot count. Pass max_seconds=<s> (CLI: --max-seconds) to accept "
+                "a wall-clock ceiling of per_min*max_seconds/60 credits (ADR-0002), or choose a per-shot device "
+                "(e.g. aws:rigetti:qpu:cepheus-1-108q or openquantum:rigetti:cepheus-1-108q)."
+            )
+        ceiling = per_min * float(max_seconds) / 60.0 + per_task + per_shot * int(shots)
+        if ceiling > cap:
+            raise RuntimeError(
+                f"per-minute ceiling {ceiling:.1f} credits (${ceiling * QBRAID_USD_PER_CREDIT:.2f}) for "
+                f"max_seconds={max_seconds} on {device} exceeds the {cap}-credit cap — lower max_seconds or "
+                "raise max_credits."
+            )
+        return {
+            "billing": "per-minute",
+            "per_minute_credits": per_min,
+            "max_seconds": float(max_seconds),
+            "ceiling_credits": round(ceiling, 3),
+            "ceiling_usd": round(ceiling * QBRAID_USD_PER_CREDIT, 4),
+            "note": "billed for actual execution time, prorated; the ceiling is the accepted bound, not the expected cost",
+        }
     est_credits = per_task + per_shot * int(shots)
     est_usd = est_credits * QBRAID_USD_PER_CREDIT
     if est_credits > cap:
@@ -414,6 +436,7 @@ def run_qasm(
     allow_spend: bool = False,
     max_credits: float | None = None,
     subcategory: str | None = None,
+    max_seconds: float | None = None,
 ) -> dict[str, Any]:
     """Run an OpenQASM program on a device and return measurement counts.
 
@@ -433,19 +456,47 @@ def run_qasm(
             pricing = (dev.metadata() or {}).get("pricing") or {}
         except Exception:  # noqa: BLE001 - best-effort probe; falls back to a safe default
             pricing = {}
-        cost_estimate = _qbraid_spend_guard(pricing, device, shots, allow_spend, max_credits)
+        cost_estimate = _qbraid_spend_guard(pricing, device, shots, allow_spend, max_credits, max_seconds)
     job = dev.run(qasm3, shots=shots)
     try:
         job.wait_for_final_state(timeout=300)
     except Exception:  # noqa: BLE001, S110 - best-effort; failure here must not break the primary path
         pass
+    # A FAILED job must never come back as an empty success: two delay-bearing circuits on the
+    # free simulator FAILED and this path returned counts: {} (2026-09-07). Surface the status
+    # and whatever the backend said, then refuse to hand back a result with no counts.
+    status = None
+    try:
+        status = str(job.status())
+    except Exception:  # noqa: BLE001 - some backends have no status(); fall through to the counts check
+        status = None
+    job_meta: dict[str, Any] = {}
+    try:
+        job_meta = dict(job.metadata() or {})
+    except Exception:  # noqa: BLE001 - metadata is best-effort
+        job_meta = {}
+    if status and any(w in status.upper() for w in ("FAILED", "CANCEL")):
+        detail = str(job_meta.get("statusText") or job_meta.get("error") or job_meta.get("message") or "")[:300]
+        raise RuntimeError(
+            f"{device} job {getattr(job, 'id', None)} ended {status}"
+            + (f": {detail}" if detail else "") + " — no counts were produced"
+        )
     res = job.result()
+    counts = _counts_from_result(res)
+    if not counts:
+        raise RuntimeError(
+            f"{device} job {getattr(job, 'id', None)} returned no counts (status {status}) — "
+            "the backend rejected or dropped the circuit; treat this as a failed run"
+        )
     out: dict[str, Any] = {
         "device": device,
         "shots": shots,
         "job_id": getattr(job, "id", None),
-        "counts": _counts_from_result(res),
+        "counts": counts,
     }
+    billed = {k: job_meta[k] for k in ("cost", "executionDuration", "timeStamps") if k in job_meta}
+    if billed:
+        out["billed"] = billed
     if cost_estimate is not None:
         out["cost_estimate"] = cost_estimate
     return out
@@ -483,6 +534,7 @@ def run_qiskit(
     shots: int = 100,
     allow_spend: bool = False,
     max_credits: float | None = None,
+    max_seconds: float | None = None,
     subcategory: str | None = None,
 ) -> dict[str, Any]:
     """Run a Qiskit circuit on a device.
@@ -501,6 +553,7 @@ def run_qiskit(
         shots=shots,
         allow_spend=allow_spend,
         max_credits=max_credits,
+        max_seconds=max_seconds,
         subcategory=subcategory,
     )
 

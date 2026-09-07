@@ -218,9 +218,9 @@ The whole point is that *casual use is free and a careless run can't drain the b
 - **Free by default.** The default device is the free qBraid simulator; nothing spends until you name a hardware device.
 - **Explicit opt-in.** A real-QPU run requires `allow_spend=True` (CLI `--allow-spend`) or `KANNAKA_QUANTUM_ALLOW_SPEND=1`. Otherwise it raises and points you back to the free simulator.
 - **Credit ceiling.** Every paid run is bounded by `max_credits` (CLI `--max-credits`); over-cap pre-flight estimates raise instead of submitting. Defaults: qBraid 200 credits (≈ $2), OpenQuantum 1 credit (≈ $2). Override via `QBRAID_MAX_CREDITS` / `OPENQUANTUM_MAX_CREDITS`.
-- **Per-minute devices are refused.** qBraid's *native* Rigetti bills **per minute** (~12000 credits/min ≈ **$120/min**) — cost can't be bounded from a shot count, so the bridge rejects per-minute devices outright. Use a per-shot device instead.
+- **Per-minute devices need `max_seconds`.** qBraid's *native* Rigetti bills **per minute** (~12000 credits/min ≈ **$120/min**, prorated to actual execution time). The bridge refuses it unless you bound wall-clock time with `max_seconds` (CLI `--max-seconds`); the ceiling `rate*seconds/60` must fit under the credit cap (ADR-0002). It is the only route that executes `delay` instructions.
 
-All three hazards (no-opt-in, over-cap, per-minute) raise before any job is submitted — verified at $0.
+All three hazards (no-opt-in, over-cap, per-minute without `max_seconds`) raise before any job is submitted — verified at $0. A job that ends FAILED, or returns no counts, raises instead of coming back as an empty success.
 
 ### Cheap real QPUs
 
@@ -229,7 +229,7 @@ All three hazards (no-opt-in, over-cap, per-minute) raise before any job is subm
 | `openquantum:iqm:garnet` | OpenQuantum | $0.00087/shot ≈ $0.22 |
 | `openquantum:rigetti:cepheus-1-108q` | OpenQuantum | $0.000255/shot ≈ $0.07 |
 | `aws:rigetti:qpu:cepheus-1-108q` | qBraid | 30 + 0.0425/shot credits ≈ $0.41 |
-| ⚠️ `rigetti:rigetti:qpu:cepheus-1-108q` | qBraid (native) | **$120/min — refused** |
+| ⚠️ `rigetti:rigetti:qpu:cepheus-1-108q` | qBraid (native) | **$120/min prorated — needs `--max-seconds`**; the only route that runs `delay` |
 
 ---
 

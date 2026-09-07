@@ -1,0 +1,468 @@
+{
+ "device": "rigetti:rigetti:qpu:cepheus-1-108q",
+ "protocol": "ADR-0002 controlled-delay",
+ "qubit": 0,
+ "shots": 300,
+ "delays_us": [
+  0.0,
+  2.0,
+  5.0,
+  10.0,
+  20.0,
+  50.0,
+  100.0
+ ],
+ "arms": [
+  "t1",
+  "ramsey",
+  "echo"
+ ],
+ "abort_check": {
+  "p1_at_0": 0.92,
+  "p1_at_longest": 0.18333333333333332,
+  "delta": 0.7366666666666667,
+  "threshold": 0.1,
+  "aborted": false
+ },
+ "jobs": [
+  {
+   "arm": "t1",
+   "delay_us": 0.0,
+   "shots": 300,
+   "counts": {
+    "0": 24,
+    "1": 276
+   },
+   "p1": 0.92,
+   "se": 0.01566312016596097,
+   "credits": 15.5596,
+   "exec_ms": 77,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e50f41a110a0a39e1c75d",
+   "wall_s": 13.8,
+   "quil": "DECLARE ro BIT[1]\nRX(pi) 0\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "t1",
+   "delay_us": 100.0,
+   "shots": 300,
+   "counts": {
+    "0": 245,
+    "1": 55
+   },
+   "p1": 0.18333333333333332,
+   "se": 0.022339965847647886,
+   "credits": 21.6704,
+   "exec_ms": 108,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e51001a110a0a39e1c762",
+   "wall_s": 11.5,
+   "quil": "DECLARE ro BIT[1]\nRX(pi) 0\nDELAY 0 0.0001\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "ramsey",
+   "delay_us": 0.0,
+   "shots": 300,
+   "counts": {
+    "0": 16,
+    "1": 284
+   },
+   "p1": 0.9466666666666667,
+   "se": 0.012972906239401267,
+   "credits": 16.3054,
+   "exec_ms": 81,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e510b1a110a0a39e1c767",
+   "wall_s": 11.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 0\nRX(pi/2) 0\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "echo",
+   "delay_us": 0.0,
+   "shots": 300,
+   "counts": {
+    "0": 285,
+    "1": 15
+   },
+   "p1": 0.05,
+   "se": 0.012583057392117916,
+   "credits": 15.5128,
+   "exec_ms": 77,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e51161a110a0a39e1c76c",
+   "wall_s": 11.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 0\nRX(pi) 0\nRX(pi/2) 0\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "t1",
+   "delay_us": 2.0,
+   "shots": 300,
+   "counts": {
+    "0": 24,
+    "1": 276
+   },
+   "p1": 0.92,
+   "se": 0.01566312016596097,
+   "credits": 15.7238,
+   "exec_ms": 78,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e51221a110a0a39e1c771",
+   "wall_s": 6.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi) 0\nDELAY 0 0.000001984\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "ramsey",
+   "delay_us": 2.0,
+   "shots": 300,
+   "counts": {
+    "0": 46,
+    "1": 254
+   },
+   "p1": 0.8466666666666667,
+   "se": 0.020802421511466898,
+   "credits": 15.4488,
+   "exec_ms": 77,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e51281a110a0a39e1c775",
+   "wall_s": 11.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 0\nDELAY 0 0.000001984\nRX(pi/2) 0\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "echo",
+   "delay_us": 2.0,
+   "shots": 300,
+   "counts": {
+    "0": 256,
+    "1": 44
+   },
+   "p1": 0.14666666666666667,
+   "se": 0.02042511163213521,
+   "credits": 15.3232,
+   "exec_ms": 76,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e51341a110a0a39e1c779",
+   "wall_s": 11.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 0\nDELAY 0 0.000000992\nRX(pi) 0\nDELAY 0 0.000000992\nRX(pi/2) 0\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "t1",
+   "delay_us": 5.0,
+   "shots": 300,
+   "counts": {
+    "0": 48,
+    "1": 252
+   },
+   "p1": 0.84,
+   "se": 0.021166010488516726,
+   "credits": 15.971599999999999,
+   "exec_ms": 79,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e513f1a110a0a39e1c77d",
+   "wall_s": 11.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi) 0\nDELAY 0 0.000004992\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "ramsey",
+   "delay_us": 5.0,
+   "shots": 300,
+   "counts": {
+    "0": 76,
+    "1": 224
+   },
+   "p1": 0.7466666666666667,
+   "se": 0.025110127807689838,
+   "credits": 16.6538,
+   "exec_ms": 83,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e514a1a110a0a39e1c782",
+   "wall_s": 6.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 0\nDELAY 0 0.000004992\nRX(pi/2) 0\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "echo",
+   "delay_us": 5.0,
+   "shots": 300,
+   "counts": {
+    "0": 251,
+    "1": 49
+   },
+   "p1": 0.16333333333333333,
+   "se": 0.02134287980846349,
+   "credits": 15.624200000000002,
+   "exec_ms": 78,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e51511a110a0a39e1c786",
+   "wall_s": 6.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 0\nDELAY 0 0.000002496\nRX(pi) 0\nDELAY 0 0.000002496\nRX(pi/2) 0\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "t1",
+   "delay_us": 10.0,
+   "shots": 300,
+   "counts": {
+    "0": 79,
+    "1": 221
+   },
+   "p1": 0.7366666666666667,
+   "se": 0.025428913260885325,
+   "credits": 16.232,
+   "exec_ms": 81,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e51571a110a0a39e1c78a",
+   "wall_s": 11.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi) 0\nDELAY 0 0.000009984\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "ramsey",
+   "delay_us": 10.0,
+   "shots": 300,
+   "counts": {
+    "0": 133,
+    "1": 167
+   },
+   "p1": 0.5566666666666666,
+   "se": 0.028681520699391616,
+   "credits": 15.9802,
+   "exec_ms": 79,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e51621a110a0a39e1c78e",
+   "wall_s": 11.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 0\nDELAY 0 0.000009984\nRX(pi/2) 0\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "echo",
+   "delay_us": 10.0,
+   "shots": 300,
+   "counts": {
+    "0": 240,
+    "1": 60
+   },
+   "p1": 0.2,
+   "se": 0.023094010767585032,
+   "credits": 16.165,
+   "exec_ms": 80,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e516e1a110a0a39e1c792",
+   "wall_s": 6.6,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 0\nDELAY 0 0.000004992\nRX(pi) 0\nDELAY 0 0.000004992\nRX(pi/2) 0\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "t1",
+   "delay_us": 20.0,
+   "shots": 300,
+   "counts": {
+    "0": 114,
+    "1": 186
+   },
+   "p1": 0.62,
+   "se": 0.0280237994093116,
+   "credits": 16.6698,
+   "exec_ms": 83,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e51741a110a0a39e1c796",
+   "wall_s": 6.5,
+   "quil": "DECLARE ro BIT[1]\nRX(pi) 0\nDELAY 0 0.00002\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "ramsey",
+   "delay_us": 20.0,
+   "shots": 300,
+   "counts": {
+    "0": 159,
+    "1": 141
+   },
+   "p1": 0.47,
+   "se": 0.02881550508551487,
+   "credits": 16.5294,
+   "exec_ms": 82,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e517b1a110a0a39e1c79a",
+   "wall_s": 6.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 0\nDELAY 0 0.00002\nRX(pi/2) 0\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "echo",
+   "delay_us": 20.0,
+   "shots": 300,
+   "counts": {
+    "0": 189,
+    "1": 111
+   },
+   "p1": 0.37,
+   "se": 0.027874719729532708,
+   "credits": 16.5822,
+   "exec_ms": 82,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e51811a110a0a39e1c79f",
+   "wall_s": 11.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 0\nDELAY 0 0.000009984\nRX(pi) 0\nDELAY 0 0.000009984\nRX(pi/2) 0\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "t1",
+   "delay_us": 50.0,
+   "shots": 300,
+   "counts": {
+    "0": 192,
+    "1": 108
+   },
+   "p1": 0.36,
+   "se": 0.027712812921102038,
+   "credits": 18.5606,
+   "exec_ms": 92,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e518c1a110a0a39e1c7a3",
+   "wall_s": 6.2,
+   "quil": "DECLARE ro BIT[1]\nRX(pi) 0\nDELAY 0 0.000049984\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "ramsey",
+   "delay_us": 50.0,
+   "shots": 300,
+   "counts": {
+    "0": 152,
+    "1": 148
+   },
+   "p1": 0.49333333333333335,
+   "se": 0.028864947344230254,
+   "credits": 18.343,
+   "exec_ms": 91,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e51931a110a0a39e1c7a7",
+   "wall_s": 6.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 0\nDELAY 0 0.000049984\nRX(pi/2) 0\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "echo",
+   "delay_us": 50.0,
+   "shots": 300,
+   "counts": {
+    "0": 168,
+    "1": 132
+   },
+   "p1": 0.44,
+   "se": 0.028658913680272905,
+   "credits": 18.2776,
+   "exec_ms": 91,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e51991a110a0a39e1c7ab",
+   "wall_s": 6.2,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 0\nDELAY 0 0.000024992\nRX(pi) 0\nDELAY 0 0.000024992\nRX(pi/2) 0\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "ramsey",
+   "delay_us": 100.0,
+   "shots": 300,
+   "counts": {
+    "0": 161,
+    "1": 139
+   },
+   "p1": 0.4633333333333333,
+   "se": 0.028789787283893777,
+   "credits": 21.1854,
+   "exec_ms": 105,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e519f1a110a0a39e1c7af",
+   "wall_s": 11.3,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 0\nDELAY 0 0.0001\nRX(pi/2) 0\nMEASURE 0 ro[0]\n"
+  },
+  {
+   "arm": "echo",
+   "delay_us": 100.0,
+   "shots": 300,
+   "counts": {
+    "0": 169,
+    "1": 131
+   },
+   "p1": 0.43666666666666665,
+   "se": 0.028634995424531903,
+   "credits": 21.4224,
+   "exec_ms": 107,
+   "job_id": "rigetti:rigetti:qpu:cepheus-1-108q-da4c-qjob-6a9e51aa1a110a0a39e1c7b3",
+   "wall_s": 11.4,
+   "quil": "DECLARE ro BIT[1]\nRX(pi/2) 0\nDELAY 0 0.000049984\nRX(pi) 0\nDELAY 0 0.000049984\nRX(pi/2) 0\nMEASURE 0 ro[0]\n"
+  }
+ ],
+ "curves": {
+  "t1": {
+   "points": [
+    [
+     0.0,
+     0.92
+    ],
+    [
+     2.0,
+     0.92
+    ],
+    [
+     5.0,
+     0.84
+    ],
+    [
+     10.0,
+     0.7366666666666667
+    ],
+    [
+     20.0,
+     0.62
+    ],
+    [
+     50.0,
+     0.36
+    ],
+    [
+     100.0,
+     0.18333333333333332
+    ]
+   ],
+   "half_life_us": 27.884615384615387
+  },
+  "ramsey": {
+   "points": [
+    [
+     0.0,
+     0.9466666666666667
+    ],
+    [
+     2.0,
+     0.8466666666666667
+    ],
+    [
+     5.0,
+     0.7466666666666667
+    ],
+    [
+     10.0,
+     0.5566666666666666
+    ],
+    [
+     20.0,
+     0.47
+    ],
+    [
+     50.0,
+     0.49333333333333335
+    ],
+    [
+     100.0,
+     0.4633333333333333
+    ]
+   ],
+   "half_life_us": 6.096491228070177
+  },
+  "echo": {
+   "points": [
+    [
+     0.0,
+     0.05
+    ],
+    [
+     2.0,
+     0.14666666666666667
+    ],
+    [
+     5.0,
+     0.16333333333333333
+    ],
+    [
+     10.0,
+     0.2
+    ],
+    [
+     20.0,
+     0.37
+    ],
+    [
+     50.0,
+     0.44
+    ],
+    [
+     100.0,
+     0.43666666666666665
+    ]
+   ],
+   "half_life_us": 12.549019607843142
+  }
+ },
+ "credits_total": 359.741,
+ "status": "complete"
+}

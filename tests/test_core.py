@@ -239,3 +239,111 @@ def test_run_qasm_real_qbraid_qpu_refuses_without_opt_in(monkeypatch):
     with pytest.raises(RuntimeError, match="allow_spend"):
         core.run_qasm("OPENQASM 3;", device="aws:ionq:qpu:forte-1", shots=100)
     assert not dev.ran  # refused before any job was submitted
+
+
+def test_qbraid_spend_guard_per_minute_allowed_with_max_seconds(monkeypatch):
+    monkeypatch.delenv("QBRAID_MAX_CREDITS", raising=False)
+    est = core._qbraid_spend_guard(
+        {"perMinute": 12000}, "rigetti:rigetti:qpu:cepheus-1-108q", 100, allow_spend=True, max_credits=500, max_seconds=2
+    )
+    assert est["billing"] == "per-minute"
+    assert abs(est["ceiling_credits"] - 400.0) < 1e-9  # 12000/min * 2 s
+
+
+def test_qbraid_spend_guard_per_minute_ceiling_over_cap():
+    with pytest.raises(RuntimeError, match="exceeds"):
+        core._qbraid_spend_guard({"perMinute": 12000}, "d", 100, allow_spend=True, max_credits=100, max_seconds=2)
+
+
+def test_qbraid_spend_guard_per_minute_zero_seconds_refused():
+    with pytest.raises(RuntimeError, match="per-minute"):
+        core._qbraid_spend_guard({"perMinute": 12000}, "d", 100, allow_spend=True, max_credits=1000, max_seconds=0)
+
+
+class _FailedJob:
+    id = "job-failed"
+
+    def wait_for_final_state(self, timeout=None):
+        return None
+
+    def status(self):
+        return "JobStatus.FAILED"
+
+    def metadata(self):
+        return {"statusText": "Delay is not supported"}
+
+    def result(self):  # pragma: no cover - must never be reached
+        raise AssertionError("result() must not be called for a FAILED job")
+
+
+class _EmptyJob(_FailedJob):
+    id = "job-empty"
+
+    def status(self):
+        return "JobStatus.COMPLETED"
+
+    def metadata(self):
+        return {}
+
+    def result(self):
+        class _R:
+            def measurement_counts(self):
+                return {}
+
+            class data:  # mimics qbraid's Result.data
+                @staticmethod
+                def get_counts():
+                    return {}
+
+        return _R()
+
+
+def _provider_with(job):
+    class _Dev:
+        def metadata(self):
+            return {}
+
+        def run(self, qasm3, shots=100):
+            return job
+
+    class _Prov:
+        def get_device(self, device):
+            return _Dev()
+
+    return lambda: _Prov()
+
+
+def test_run_qasm_failed_job_raises_not_empty_success(monkeypatch):
+    monkeypatch.setattr(core, "_provider", _provider_with(_FailedJob()))
+    with pytest.raises(RuntimeError, match="FAILED.*Delay is not supported"):
+        core.run_qasm("OPENQASM 3.0;", device="qbraid:qbraid:sim:qir-sv", shots=10)
+
+
+def test_run_qasm_empty_counts_raise(monkeypatch):
+    monkeypatch.setattr(core, "_provider", _provider_with(_EmptyJob()))
+    with pytest.raises(RuntimeError, match="no counts"):
+        core.run_qasm("OPENQASM 3.0;", device="qbraid:qbraid:sim:qir-sv", shots=10)
+
+
+class _BilledJob(_EmptyJob):
+    id = "job-billed"
+
+    def metadata(self):
+        import datetime as _dt
+        return {"cost": 7.3, "timeStamps": {"executed": _dt.datetime(2026, 9, 7, 1, 2, 3, tzinfo=_dt.timezone.utc)}}
+
+    def result(self):
+        class _R:
+            def measurement_counts(self):
+                return {"1": 90, "0": 10}
+
+        return _R()
+
+
+def test_run_qasm_billed_metadata_is_json_safe(monkeypatch):
+    import json
+    monkeypatch.setattr(core, "_provider", _provider_with(_BilledJob()))
+    out = core.run_qasm("OPENQASM 3.0;", device="qbraid:qbraid:sim:qir-sv", shots=100)
+    assert out["counts"] == {"1": 90, "0": 10}
+    assert out["billed"]["cost"] == 7.3
+    json.dumps(out)  # a datetime in timeStamps must not be able to kill the CLI output

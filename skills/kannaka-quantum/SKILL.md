@@ -20,7 +20,7 @@ If neither is available, install the package: `pip install kannaka-quantum` (or 
 
 - The **default device is the free qBraid simulator** `qbraid:qbraid:sim:qir-sv` (30 qubits, no credits). Casual/agent use never spends money.
 - A **real QPU runs only when you opt in explicitly**: pass a hardware `device=` AND `allow_spend=true` (CLI: `--allow-spend`). A `max_credits` ceiling guards every paid run (default ≈ $2).
-- **Never** run on a per-minute-billed device. The native `rigetti:rigetti:qpu:cepheus-1-108q` on qBraid bills **$120/min** — the bridge refuses per-minute devices outright. For a cheap real gate QPU use `aws:rigetti:qpu:cepheus-1-108q` (~$0.41 for 256 shots) or an OpenQuantum backend like `openquantum:iqm:garnet`.
+- **Per-minute devices need a wall-clock bound.** The native `rigetti:rigetti:qpu:cepheus-1-108q` on qBraid bills **$120/min prorated to actual execution time** (a 1,000-shot job is tens to hundreds of ms ≈ $0.40). The bridge refuses it unless you pass `--max-seconds N` (ceiling = $2·N, which must fit under `--max-credits`); it is the ONLY route that executes `delay` instructions (Braket drops them silently, OpenQuantum rejects them, the free simulator FAILS them). For a cheap plain gate run use `openquantum:rigetti:cepheus-1-108q` ($0.000255/shot) or `openquantum:iqm:garnet`.
 - On paid QPUs keep `shots` low — `resonance_recall` defaults to 1024 shots.
 
 ## Tools

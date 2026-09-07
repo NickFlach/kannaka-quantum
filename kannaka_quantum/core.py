@@ -471,6 +471,43 @@ def run_qasm(
             pricing = {}
         cost_estimate = _qbraid_spend_guard(pricing, device, shots, allow_spend, max_credits, max_seconds)
     job = dev.run(qasm3, shots=shots)
+    return _finish_qbraid_job(job, device, shots, cost_estimate)
+
+
+def _qbraid_device_and_estimate(device: str, shots: int, allow_spend: bool, max_credits: float | None,
+                                max_seconds: float | None):
+    provider = _provider()
+    dev = provider.get_device(device)
+    cost_estimate = None
+    if "sim" not in device.lower():  # real qBraid QPU — gate the spend
+        try:
+            pricing = (dev.metadata() or {}).get("pricing") or {}
+        except Exception:  # noqa: BLE001 - best-effort probe; falls back to a safe default
+            pricing = {}
+        cost_estimate = _qbraid_spend_guard(pricing, device, shots, allow_spend, max_credits, max_seconds)
+    return dev, cost_estimate
+
+
+def run_quil(
+    quil: str,
+    device: str,
+    shots: int = 100,
+    allow_spend: bool = False,
+    max_credits: float | None = None,
+    max_seconds: float | None = None,
+) -> dict[str, Any]:
+    """Run Quil / Quil-T text on a qBraid Rigetti device (the ONLY route that executes
+    DELAY: Braket drops it, OpenQuantum rejects it, the simulator fails it). Timing
+    programs bypass quilc, so use native gates only (RX ±pi/2 ±pi, RZ, CZ, I, MEASURE)
+    and 32 ns-aligned durations. Same spend guard and job handling as :func:`run_qasm`."""
+    from pyquil import Program
+
+    dev, cost_estimate = _qbraid_device_and_estimate(device, shots, allow_spend, max_credits, max_seconds)
+    job = dev.run(Program(quil), shots=shots)
+    return _finish_qbraid_job(job, device, shots, cost_estimate)
+
+
+def _finish_qbraid_job(job, device: str, shots: int, cost_estimate) -> dict[str, Any]:
     try:
         job.wait_for_final_state(timeout=300)
     except Exception:  # noqa: BLE001, S110 - best-effort; failure here must not break the primary path

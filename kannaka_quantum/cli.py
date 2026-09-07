@@ -83,6 +83,18 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--shots", type=int, default=100)
     _add_spend_opts(r)
 
+    g = dp = sub.add_parser("decay", help="ADR-0002 controlled-delay experiment (T1 / Ramsey / echo in Quil-T) on the native Rigetti device")
+    g = dp.add_argument("--device", default="rigetti:rigetti:qpu:cepheus-1-108q")
+    g = dp.add_argument("--delays-us", default="0,2,5,10,20,50,100", help="comma list of delays in microseconds")
+    g = dp.add_argument("--arms", default="t1,ramsey,echo")
+    g = dp.add_argument("--shots", type=int, default=500)
+    g = dp.add_argument("--qubit", type=int, default=0)
+    g = dp.add_argument("--max-credits-total", type=float, default=800.0, help="stop the sweep past this many billed credits (default 800 = $8, ADR-0002)")
+    g = dp.add_argument("--abort-delta", type=float, default=0.10, help="minimum P(1) drop between 0 and the longest delay, else abort")
+    g = dp.add_argument("--out", default="bench", help="dir for decay-<ts>.json (+ a LEDGER.md row if present)")
+    g = dp.add_argument("--allow-spend", action="store_true")
+    g = dp.add_argument("--max-credits", type=float, default=400.0, help="per-job credit cap (ceiling = rate*max_seconds/60)")
+    g = dp.add_argument("--max-seconds", type=float, default=2.0, help="per-job wall-clock ceiling accepted on the per-minute device")
     g = sub.add_parser("qrng", help="quantum random bits")
     g.add_argument("--bits", type=int, default=8)
     g.add_argument("--device", default=core.DEFAULT_DEVICE, help=_DEVICE_HELP)
@@ -559,6 +571,24 @@ def main(argv: list[str] | None = None) -> int:
                 max_seconds=getattr(args, "max_seconds", None),
                 subcategory=args.subcategory,
             )
+        elif args.cmd == "decay":
+            from pathlib import Path as _P
+
+            from kannaka_quantum import decay as _decay
+
+            def _runner(quil: str, shots: int):
+                return core.run_quil(quil, device=args.device, shots=shots, allow_spend=args.allow_spend,
+                                     max_credits=args.max_credits, max_seconds=args.max_seconds)
+
+            rec = _decay.run_decay(
+                _runner, delays_us=tuple(float(x) for x in args.delays_us.split(",") if x.strip()),
+                shots=args.shots, arms=tuple(a.strip() for a in args.arms.split(",") if a.strip()),
+                qubit=args.qubit, max_credits_total=args.max_credits_total, abort_delta=args.abort_delta,
+                log=lambda m: print(f"[decay] {m}", file=sys.stderr, flush=True),
+            )
+            path = _decay.save(rec, _P(args.out), args.device)
+            out = {"saved": str(path), "status": rec["status"], "credits_total": rec["credits_total"],
+                   "abort_check": rec["abort_check"], "curves": rec.get("curves")}
         elif args.cmd == "qrng":
             out = core.qrng(
                 args.bits,

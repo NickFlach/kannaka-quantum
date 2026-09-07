@@ -27,6 +27,7 @@ import json
 import math
 import time
 from collections.abc import Callable
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -98,7 +99,7 @@ def half_life_us(points: list[tuple[float, float]]) -> float | None:
     if not (p0 > pinf):
         return None
     mid = (p0 + pinf) / 2
-    for (t_a, p_a), (t_b, p_b) in zip(pts, pts[1:]):
+    for (t_a, p_a), (t_b, p_b) in pairwise(pts):
         if p_a >= mid >= p_b:
             if p_a == p_b:
                 return t_a

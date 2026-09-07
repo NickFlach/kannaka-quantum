@@ -429,6 +429,19 @@ def _qbraid_spend_guard(
     }
 
 
+def _json_safe(v: Any) -> Any:
+    """Job metadata carries datetimes (timeStamps) and Decimals; the CLI prints JSON, so a
+    non-primitive value here once cost a paid result. Primitives pass, containers recurse,
+    everything else becomes str()."""
+    if v is None or isinstance(v, (bool, int, float, str)):
+        return v
+    if isinstance(v, dict):
+        return {str(k): _json_safe(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_json_safe(x) for x in v]
+    return str(v)
+
+
 def run_qasm(
     qasm3: str,
     device: str = DEFAULT_DEVICE,
@@ -494,7 +507,7 @@ def run_qasm(
         "job_id": getattr(job, "id", None),
         "counts": counts,
     }
-    billed = {k: job_meta[k] for k in ("cost", "executionDuration", "timeStamps") if k in job_meta}
+    billed = {k: _json_safe(job_meta[k]) for k in ("cost", "executionDuration", "timeStamps") if k in job_meta}
     if billed:
         out["billed"] = billed
     if cost_estimate is not None:

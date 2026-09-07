@@ -323,3 +323,27 @@ def test_run_qasm_empty_counts_raise(monkeypatch):
     monkeypatch.setattr(core, "_provider", _provider_with(_EmptyJob()))
     with pytest.raises(RuntimeError, match="no counts"):
         core.run_qasm("OPENQASM 3.0;", device="qbraid:qbraid:sim:qir-sv", shots=10)
+
+
+class _BilledJob(_EmptyJob):
+    id = "job-billed"
+
+    def metadata(self):
+        import datetime as _dt
+        return {"cost": 7.3, "timeStamps": {"executed": _dt.datetime(2026, 9, 7, 1, 2, 3)}}
+
+    def result(self):
+        class _R:
+            def measurement_counts(self):
+                return {"1": 90, "0": 10}
+
+        return _R()
+
+
+def test_run_qasm_billed_metadata_is_json_safe(monkeypatch):
+    import json
+    monkeypatch.setattr(core, "_provider", _provider_with(_BilledJob()))
+    out = core.run_qasm("OPENQASM 3.0;", device="qbraid:qbraid:sim:qir-sv", shots=100)
+    assert out["counts"] == {"1": 90, "0": 10}
+    assert out["billed"]["cost"] == 7.3
+    json.dumps(out)  # a datetime in timeStamps must not be able to kill the CLI output

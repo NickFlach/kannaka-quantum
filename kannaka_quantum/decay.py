@@ -197,15 +197,17 @@ def run_decay(
     return record
 
 
-def ledger_row(record: dict[str, Any], device: str) -> str:
-    """One Markdown table row for bench/LEDGER.md."""
+def ledger_row(record: dict[str, Any], device: str, row_no: str = "n") -> str:
+    """One row in bench/LEDGER.md's table: | # | date | benchmark | device | shots | metric | sim | hardware | cost |"""
     c = record.get("curves", {})
-    hl = ", ".join(f"{a} {v['half_life_us']:.1f} us" if v.get("half_life_us") is not None else f"{a} —"
-                   for a, v in c.items())
+    hl = " / ".join(f"{a} {v['half_life_us']:.1f} us" if v.get("half_life_us") is not None else f"{a} —"
+                    for a, v in c.items())
     ab = record["abort_check"]
-    return (f"| {time.strftime('%Y-%m-%d')} | decay (ADR-0002) | {device} | {len(record.get('jobs', []))} jobs × "
-            f"{record['shots']} shots | Δ(0→{record['delays_us'][-1]:g} us) = {ab['delta']:.3f} | {hl or '—'} | "
-            f"{record['credits_total']:.1f} cr ≈ ${record['credits_total'] / 100:.2f} | {record['status']} |")
+    n_jobs = len(record.get("jobs", []))
+    return (f"| {row_no} | {time.strftime('%Y-%m-%d')} | decay (ADR-0002): t1 / ramsey / echo | `{device}` | "
+            f"{n_jobs} × {record['shots']} | half-way delay (P(1) mid-point); abort Δ(0→{record['delays_us'][-1]:g} us) "
+            f"= {ab['delta']:.2f} | n/a (no simulator executes DELAY) | **{hl or '—'}** ({record['status']}) | "
+            f"{record['credits_total']:.1f} cr ≈ ${record['credits_total'] / 100:.2f} |")
 
 
 def save(record: dict[str, Any], out_dir: Path, device: str) -> Path:

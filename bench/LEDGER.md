@@ -9,6 +9,7 @@ closing) the gap. Quarterly cadence; every row is a guarded, budgeted run.
 | 0 | 2026-06 | Bell state (2-qubit) | `aws:rigetti:qpu:cepheus-1-108q` | 256 | state fidelity | 100% | **94.5%** (5.5% leakage) | ~$0.41 |
 | 1 | 2026-07-01 | recall-correspondence (5-scenario subset) | `aws:rigetti:qpu:cepheus-1-108q` | 200 | agreement (quantum_top == classical_top) | 100% | **40%** (2/5) | **$1.925** (192.5 cr) |
 | 2 | 2026-08-10 | CHSH / Bell parameter (T5.1 `bell`) | `aws:rigetti:qpu:cepheus-1-108q` | 512 × 4 settings | `S` (classical bound 2, Tsirelson 2.828) | 2.856 | **2.238 ± 0.073** (3.3σ > 2) | **$2.07** (207.04 cr) |
+| 3 | 2026-09-07 | decay (ADR-0002): t1 / ramsey / echo | `rigetti:rigetti:qpu:cepheus-1-108q` (native, Quil-T) | 21 × 300 | half-way delay (P(1) mid-point); abort Δ(0→100 us) = 0.74 | n/a (no simulator executes DELAY) | **t1 27.9 us / ramsey 6.1 us / echo 12.5 us** | **$3.60** (359.7 cr) |
 
 ## Row 1 — first quarterly recall-correspondence run
 
@@ -54,6 +55,30 @@ Four 2-qubit CHSH settings on Rigetti Cepheus, 512 shots each, via
   Balance 1350.93 → 1143.89 cr. The per-task fee is 120 cr of that — the reason
   512 shots/setting cost only ~27% more than 250 while buying √2 the precision,
   which is what carried the result from a marginal 2.3σ to 3.3σ.
+
+## Row 3 — controlled delay: decoherence as forgetting (ADR-0002)
+
+Pre-registered on OpenBotCity (artifact `b60d41d1`) before the run; result artifact `8a68f9c0`.
+Native device only: Braket drops `DELAY`, OpenQuantum rejects it, the simulator fails it. The
+abort check (t1 at 0 vs 200 µs: P(1) 0.92 → 0.07, execution time up by exactly shots × delay)
+passed first, for $0.19. Sweep: qubit 0, delays 0/2/5/10/20/50/100 µs, 300 shots per point,
+21 jobs, **359.7 credits ≈ $3.60**, no job cost more than 21.4 credits.
+
+| arm | P(1) by delay (µs → P(1), SE ≈ 0.02–0.03) | half-way |
+|---|---|---|
+| t1 `RX(pi); DELAY t` | 0→0.920, 2→0.920, 5→0.840, 10→0.737, 20→0.620, 50→0.360, 100→0.183 | **27.9 µs** |
+| ramsey `RX(pi/2); DELAY t; RX(pi/2)` | 0→0.947, 2→0.847, 5→0.747, 10→0.557, 20→0.470, 50→0.493, 100→0.463 | **6.1 µs** |
+| echo `RX(pi/2); DELAY t/2; RX(pi); DELAY t/2; RX(pi/2)` | 0→0.050, 2→0.147, 5→0.163, 10→0.200, 20→0.370, 50→0.440, 100→0.437 | **12.5 µs** |
+
+All three pre-registered predictions held: t1 monotone with its half-way inside 5–60 µs; ramsey
+faster than t1; echo slower than ramsey (one mid-interval π pulse doubles the phase lifetime).
+No refutation fired. Data: `bench/decay-20260907T055501Z.json` (every job id, count table, credits).
+Reproduce (from a box with pyquil, e.g. debain2 `~/pyquil-venv`; the Windows box cannot build `quil`):
+
+```bash
+kannaka-quantum decay --device rigetti:rigetti:qpu:cepheus-1-108q --delays-us 0,2,5,10,20,50,100 \
+  --arms t1,ramsey,echo --shots 300 --allow-spend --max-credits 400 --max-seconds 2 --max-credits-total 600
+```
 
 ## Runbook
 

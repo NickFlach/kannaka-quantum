@@ -595,7 +595,15 @@ def run_qiskit(
     if device.startswith(LOCAL_PREFIX):
         return _run_local_circuit(circuit, shots, device)
 
+    from qiskit import transpile
     from qiskit.qasm3 import dumps
+
+    # Hosted backends receive plain OpenQASM 3. Library gates such as StatePreparation
+    # would be exported as an undefined custom gate ("Undefined gate 'state_preparation'",
+    # OpenQuantum 2026-09-07); qBraid's own route happened to compile them away. Lower to
+    # a standard basis first. No coupling map is given, so logical qubit indices are kept
+    # and the bench's index-based decoding stays valid.
+    circuit = transpile(circuit, basis_gates=["rz", "sx", "x", "cx"], optimization_level=1)
 
     return run_qasm(
         dumps(circuit),

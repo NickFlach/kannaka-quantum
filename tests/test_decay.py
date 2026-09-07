@@ -87,8 +87,8 @@ def test_run_decay_stops_at_credit_cap():
 
 def test_ledger_row_and_save(tmp_path):
     rec = decay.run_decay(_fake_runner(), delays_us=(0, 10, 100), shots=200)
-    (tmp_path / "LEDGER.md").write_text("| date | what | device | jobs | abort delta | half-lives | cost | status |
-", encoding="utf-8")
+    header = "| date | what | device | jobs | abort delta | half-lives | cost | status |" + chr(10)
+    (tmp_path / "LEDGER.md").write_text(header, encoding="utf-8")
     p = decay.save(rec, tmp_path, "rigetti:rigetti:qpu:cepheus-1-108q")
     assert p.exists() and p.name.startswith("decay-")
     rows = (tmp_path / "LEDGER.md").read_text(encoding="utf-8").splitlines()

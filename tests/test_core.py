@@ -290,7 +290,7 @@ class _EmptyJob(_FailedJob):
             def measurement_counts(self):
                 return {}
 
-            class data:  # noqa: N801 - mimics qbraid's Result.data
+            class data:  # mimics qbraid's Result.data
                 @staticmethod
                 def get_counts():
                     return {}

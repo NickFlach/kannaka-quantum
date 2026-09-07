@@ -330,7 +330,7 @@ class _BilledJob(_EmptyJob):
 
     def metadata(self):
         import datetime as _dt
-        return {"cost": 7.3, "timeStamps": {"executed": _dt.datetime(2026, 9, 7, 1, 2, 3)}}
+        return {"cost": 7.3, "timeStamps": {"executed": _dt.datetime(2026, 9, 7, 1, 2, 3, tzinfo=_dt.timezone.utc)}}
 
     def result(self):
         class _R:

@@ -7,7 +7,7 @@ name = "kannaka-quantum"
 version = "0.2.10"
 description = "Real quantum + qBraid Lab infrastructure capabilities for Kannaka via qBraid (free simulator) and OpenQuantum (real QPUs) — a CLI bridge for the coding agent and an MCP server for any agent."
 readme = "README.md"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
 keywords = ["quantum", "qbraid", "openquantum", "kannaka", "mcp", "agent", "qiskit", "compute", "lab"]
 dependencies = [

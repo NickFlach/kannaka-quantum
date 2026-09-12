@@ -272,4 +272,4 @@ no-ops.
 
 ## License
 
-MIT.
+Space Child License v1.0. See [LICENSE](./LICENSE).
